@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#030705">
+<meta name="robots" content="noindex, nofollow">
+<title>PS Code Tracker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg" aria-hidden="true"></div>
+<header class="bar">
+  <div class="brand">
+    <span class="mark"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 4 8-10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <div><h1>PS Code <em>Tracker</em></h1><p id="sub">Prices across platforms</p></div>
+  </div>
+  <div class="actions">
+    <button id="trendBtn" hidden class="btn icon" data-ripple aria-label="Price trends" title="Price trends">
+      <svg viewBox="0 0 24 24"><path d="M4 16l5-5 4 4 7-8M15 7h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="powerBtn" hidden class="btn icon on" data-ripple aria-label="Live updates" title="Live updates on/off">
+      <svg viewBox="0 0 24 24"><path d="M12 3v8M6.3 6.8a8 8 0 1011.4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+</header>
+<main id="platforms"></main>
+
+<div id="overlay" class="overlay" hidden>
+  <section class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="mhead">
+      <div><h2 id="mTitle">Rate list</h2><p>Face value &rarr; payout, last 7 days</p></div>
+      <button id="closeBtn" class="btn icon sm" data-ripple aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="meta">
+      <button id="prev" class="btn icon sm" data-ripple aria-label="Previous day"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <div class="when"><span>Dt <b id="mDate"></b></span><span>Time <b id="mTime"></b></span></div>
+      <button id="next" class="btn icon sm" data-ripple aria-label="Next day"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
+    <div id="rates"></div>
+  </section>
+</div>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
