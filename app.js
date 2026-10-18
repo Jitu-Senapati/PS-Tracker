@@ -59,14 +59,16 @@ function renderModal(){
     ${spark(r.hist,r.trend>=0)}<div class="pct">${r.pct.toFixed(1)}%<i class="${flat?'':r.trend>0?'up':'down'}">${flat?'No change':(r.trend>0?'▲ ':'▼ ')+Math.abs(ch).toFixed(1)+' pts'}</i></div></div>`;}).join('');
 }
 
+let toastT;
+function soon(){let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.className='toast';document.body.appendChild(t)}t.textContent='Coming soon';t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},1800)}
 const openM=()=>{dayOffset=0;renderModal();$('overlay').hidden=false;document.body.style.overflow='hidden'};
 const closeM=()=>{const o=$('overlay');if(o.hidden)return;o.classList.add('closing');setTimeout(()=>{o.hidden=true;o.classList.remove('closing');document.body.style.overflow=''},250)};
-$('trendBtn').onclick=openM;$('closeBtn').onclick=closeM;
+$('trendBtn').onclick=soon;$('closeBtn').onclick=closeM;
 $('overlay').onclick=e=>{if(e.target.id==='overlay')closeM()};
 document.addEventListener('keydown',e=>e.key==='Escape'&&closeM());
 $('prev').onclick=()=>{dayOffset--;renderModal()};
 $('next').onclick=()=>{if(dayOffset<0){dayOffset++;renderModal()}};
-$('powerBtn').onclick=e=>{live=!live;e.currentTarget.classList.toggle('on',live);document.body.classList.toggle('paused',!live);$('sub').textContent=live?'Live prices across platforms':'Paused'};
+$('powerBtn').onclick=soon;
 
 document.addEventListener('pointerdown',e=>{
   const b=e.target.closest('[data-ripple]');if(!b||b.disabled)return;
