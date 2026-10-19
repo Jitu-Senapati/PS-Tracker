@@ -23,11 +23,39 @@ const ic={
 };
 
 /* ---------- data ---------- */
-const seed=()=>({people:['Chinu','Jitu','Goat'],entries:[
-  {id:uid(),who:'Chinu',buyAt:'2026-10-17T10:00',sellAt:'2026-10-24T10:00',buy:1220,sell:1270,status:'Sold'}]});
-function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&Array.isArray(s.people)&&Array.isArray(s.entries))return s}catch(e){}return seed()}
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&Array.isArray(s.people)&&Array.isArray(s.entries))return s}catch(e){}return {people:['Chinu','Jitu','Goat'],entries:[]}}
 let store=load();
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}};
+/* ---------- shared sync (server keeps the real copy; this device keeps a cache) ---------- */
+const KEYSTORE='pst.book.key';
+let synced=JSON.stringify(store),pushing=0;
+const getKey=()=>{try{return localStorage.getItem(KEYSTORE)||''}catch(e){return ''}};
+function ensureKey(){if(getKey())return true;const k=(prompt('Enter the book passcode')||'').trim();if(!k)return false;try{localStorage.setItem(KEYSTORE,k)}catch(e){}return true}
+async function api(method,path,body){
+  const r=await fetch('/api/book'+path,{method,headers:{'content-type':'application/json','x-book-key':getKey()},body:body?JSON.stringify(body):undefined});
+  if(r.status===401){try{localStorage.removeItem(KEYSTORE)}catch(e){}throw new Error('auth')}
+  if(!r.ok)throw new Error('http '+r.status);
+  return r.json();
+}
+let baseNote='';
+function setNote(t){const p=document.querySelector('#bkT')&&document.querySelector('#bkT').nextElementSibling;if(!p)return;if(!baseNote)baseNote=p.textContent;p.textContent=t?baseNote+' \u00b7 '+t:baseNote}
+const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}};
+async function pull(){
+  if(pushing||(typeof entry!=='undefined'&&entry&&!entry.hidden))return;
+  try{const d=await api('GET','');store={people:d.people,entries:d.entries};synced=JSON.stringify(store);saveLocal();renderBook();setNote('shared')}
+  catch(e){setNote(e.message==='auth'?'wrong passcode - reopen the book':'offline - showing last saved copy')}
+}
+async function push(){
+  const prev=JSON.parse(synced),pe=new Map(prev.entries.map(e=>[e.id,JSON.stringify(e)])),ops=[];
+  for(const e of store.entries){if(pe.get(e.id)!==JSON.stringify(e))ops.push(['PUT','/entry',e]);pe.delete(e.id)}
+  for(const id of pe.keys())ops.push(['DELETE','/entry/'+encodeURIComponent(id)]);
+  for(const p of store.people)if(!prev.people.includes(p))ops.push(['POST','/people',{name:p}]);
+  if(!ops.length)return;
+  pushing++;
+  try{for(const [m,p,b] of ops)await api(m,p,b);synced=JSON.stringify(store);setNote('shared')}
+  catch(e){setNote(e.message==='auth'?'wrong passcode - not saved':'offline - not saved to shared book')}
+  finally{pushing--}
+}
+const save=()=>{saveLocal();push()};
 let active=store.people[0];
 
 /* ---------- date helpers ---------- */
@@ -216,5 +244,6 @@ const btn=document.createElement('button');
 btn.id='bookBtn';btn.className='btn icon';btn.setAttribute('data-ripple','');btn.setAttribute('aria-label','Investor book');btn.title='Investor book';btn.innerHTML=ic.book;
 const trend=document.getElementById('trendBtn');
 trend?trend.after(btn):document.querySelector('.actions')?.prepend(btn);
-btn.addEventListener('click',()=>{renderBook();open(book)});
+btn.addEventListener('click',()=>{renderBook();open(book);if(ensureKey())pull()});
+setInterval(()=>{if(!book.hidden&&getKey())pull()},8000);
 })();
