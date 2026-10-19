@@ -4,10 +4,8 @@
 // domain: website used to fetch the real logo.  No domain = letter badge until a link is added.
 const LAST_UPDATED = '19 Oct 2026';
 const PLATFORMS = [
-  {name:'Fampay', domain:'famapp.in', home:'https://www.famapp.in/', items:[{v:1000, s:0}, {v:2000, s:0}, {v:5000, s:0}]},
+  {name:'Amazon', logo:'amazon', home:'https://www.amazon.in/dp/B0C1GYD3KN', items:[{v:1000, s:0, u:'https://www.amazon.in/dp/B07K6RYVHR'}, {v:2000, s:0, u:'https://www.amazon.in/dp/B093QF35KZ'}, {v:3000, s:0, u:'https://www.amazon.in/dp/B07K6PVR8B'}, {v:4000, s:0, u:'https://www.amazon.in/dp/B07K6RYVJ5'}, {v:5000, s:0, u:'https://www.amazon.in/dp/B0B3DDW7TB'}, {label:'Custom', s:0, u:'https://www.amazon.in/dp/B0C1GYD3KN'}]},
   {name:'PhonePe', domain:'phonepe.com', home:'https://www.phonepe.com/', items:[{v:1000, s:0}, {v:2000, s:0}, {v:5000, s:0}]},
-  {name:'Blinkit', domain:'blinkit.com', home:'https://blinkit.com/', items:[{v:1000, s:0}, {v:2000, s:0}, {v:5000, s:0}]},
-  {name:'Amazon', logo:'amazon', home:'https://www.amazon.in/s?k=playstation+gift+card', items:[{v:1000, s:0}, {v:2000, s:0, u:'https://amzn.in/d/0hXbL70A'}, {v:3000, s:0}, {v:5000, s:0}]},
   {name:'Flipkart', logo:'flipkart', home:'https://www.flipkart.com/search?q=playstation%20gift%20card', items:[{v:1000, s:0, u:'https://dl.flipkart.com/s/PIJrJ!uuuN'}, {v:2000, s:0}, {v:5000, s:0}]},
   {name:'Gyftr', domain:'gyftr.com', home:'https://www.gyftr.com/', items:[{v:1000, s:0}, {v:2000, s:0}, {v:5000, s:0}]},
   {name:'Jio Store', domain:'jiogames.com', home:'https://store.jiogames.com/products/?brand=playstation', items:[{v:1000, s:0}, {v:2000, s:0, p:2000}, {v:5000, s:0}]},
