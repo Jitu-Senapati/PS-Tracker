@@ -9,6 +9,8 @@ const LOGOS = {
 };
 LOGOS.jiogames=`<svg viewBox="0 0 48 48"><rect width="48" height="48" fill="#0b3c8f"/><circle cx="24" cy="20" r="12" fill="#e8222d"/><text x="24" y="25" text-anchor="middle" font-family="Arial,sans-serif" font-weight="800" font-size="13" fill="#fff">jio</text><text x="24" y="41" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="8" fill="#fff" letter-spacing=".5">GAMES</text></svg>`;
 LOGOS.paytm=`<svg viewBox="0 0 48 48"><rect width="48" height="48" fill="#00baf2"/><text x="24" y="29" text-anchor="middle" font-family="Arial,sans-serif" font-weight="800" font-size="15" fill="#002970">paytm</text></svg>`;
+const badge=n=>{let h=0;for(const c of n)h=(h*31+c.charCodeAt(0))%360;return `<span class="badge" style="background:hsl(${h} 45% 34%)">${n.trim()[0].toUpperCase()}</span>`};
+const logoOf=p=>LOGOS[p.logo]||(badge(p.name)+(p.domain?`<img src="https://www.google.com/s2/favicons?domain=${p.domain}&sz=128" alt="" loading="lazy" onerror="this.remove()">`:''));
 const BASE=[[1000,.20,'1 pc'],[1000,.22,'5 pcs'],[2000,.175],[3000,.1667],[4000,.20],[5000,.16]];
 const fmt=n=>n.toLocaleString('en-IN');
 const $=id=>document.getElementById(id);
@@ -36,11 +38,11 @@ function renderPlatforms(flash){
   $('platforms').innerHTML=PLATFORMS.map((p,i)=>{
     const n=p.items.filter(x=>x.s).length;
     return `<article class="card" style="${flash?'animation:none;opacity:1':`animation-delay:${i*70}ms`}">
-      <div class="ch"><div class="logo">${LOGOS[p.logo]}</div>
+      <div class="ch"><div class="logo">${logoOf(p)}</div>
         <div><h3>${p.name}</h3><small>${p.items.length} denominations</small></div>
         <span class="tag ${n?'':'off'}">${n?n+' in stock':'Unavailable'}</span></div>
       <div class="chips">${p.items.map(it=>{const k=p.name+'-'+it.v;return `
-        <a class="chip ${it.s?'':'out'}" href="${it.u||p.home}" target="_blank" rel="noopener noreferrer" data-ripple>
+        <a class="chip ${it.s?'':'out'}" ${(it.u||p.home)?`href="${it.u||p.home}" target="_blank" rel="noopener noreferrer"`:''} data-ripple>
           <span class="v">${fmt(it.v)}</span>
           ${it.d?`<span class="d ${it.d>0?'up':'down'}">${it.d>0?'+':''}${it.d}</span>`:''}
           ${it.p?`<span class="p">&#8377;${fmt(it.p)}</span>`:''}
