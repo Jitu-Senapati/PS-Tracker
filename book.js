@@ -39,9 +39,12 @@ async function api(method,path,body){
 let baseNote='';
 function setNote(t){const p=document.querySelector('#bkT')&&document.querySelector('#bkT').nextElementSibling;if(!p)return;if(!baseNote)baseNote=p.textContent;p.textContent=t?baseNote+' \u00b7 '+t:baseNote}
 const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}};
+const sig=o=>JSON.stringify([o.people,[...o.entries].sort((a,b)=>a.id<b.id?-1:1)]);
 async function pull(){
   if(pushing||(typeof entry!=='undefined'&&entry&&!entry.hidden))return;
-  try{const d=await api('GET','');store={people:d.people,entries:d.entries};synced=JSON.stringify(store);saveLocal();renderBook();setNote('shared')}
+  try{const d=await api('GET',''),next={people:d.people,entries:d.entries};
+    if(sig(next)!==sig(store)){store=next;saveLocal();renderBook()}
+    synced=JSON.stringify(store);setNote('shared')}
   catch(e){setNote(e.message==='auth'?'wrong passcode - reopen the book':'offline - showing last saved copy')}
 }
 async function push(){
