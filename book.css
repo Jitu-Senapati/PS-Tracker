@@ -88,3 +88,18 @@
 .bk-yrs{max-height:252px;overflow-y:auto;position:relative;scrollbar-width:thin}
 .bk-yrs .bk-mon{height:44px}
 .bk-ed:hover{color:var(--acc);background:var(--acc-soft)}
+
+/* date labels, tax/codes line, codes inputs, investor name on All tab */
+.bk-rel{display:inline-block;margin-left:6px;font-style:normal;font-size:.68rem;font-weight:650;padding:1px 8px;border-radius:99px;white-space:nowrap}
+.bk-rel.fut{color:#e2b857;background:rgba(226,184,87,.12)}
+.bk-rel.now{color:#04110a;background:var(--acc)}
+.bk-rel.past{color:var(--mut);background:var(--raise)}
+.bk-row{grid-template-columns:1fr auto}
+.bk-row.still{animation:none;opacity:1}
+.bk-extra{grid-column:1/-1;font-size:.78rem;color:var(--mut);font-variant-numeric:tabular-nums}
+.bk-who{display:inline-block;margin-right:8px;padding:2px 9px;border-radius:99px;font-size:.72rem;font-weight:650;color:var(--acc);background:var(--acc-soft);vertical-align:2px}
+.bk-codes{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.bk-codes label{display:grid;gap:4px;min-width:0}
+.bk-codes small{font-size:.7rem;font-weight:650;color:var(--mut);text-align:center}
+.bk-codes .bk-in{padding:0 4px;text-align:center}
+.bk-ca{margin-top:12px;padding-top:10px;border-top:1px solid var(--stroke)}

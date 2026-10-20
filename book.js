@@ -1,4 +1,4 @@
-// Investor book + New entry + Google Calendar-style date/time picker.
+// Investor book + New entry + Google Calendar-style date picker (dates only).
 // Self-contained: injects its own header button and overlays. Data persists in localStorage.
 (()=>{
 'use strict';
@@ -60,9 +60,12 @@ let active=store.people[0];
 
 /* ---------- date helpers ---------- */
 const isoOf=(y,m,d,h=0,mi=0)=>`${y}-${pad(m+1)}-${pad(d)}T${pad(h)}:${pad(mi)}`;
-const nowIso=()=>{const d=new Date();return isoOf(d.getFullYear(),d.getMonth(),d.getDate(),d.getHours(),d.getMinutes())};
+const nowIso=()=>{const d=new Date();return isoOf(d.getFullYear(),d.getMonth(),d.getDate())};
 const dShort=iso=>{const d=new Date(iso);return `${d.getDate()} ${MON[d.getMonth()]}`+(d.getFullYear()!==new Date().getFullYear()?` ${d.getFullYear()}`:'')};
-const dFull=iso=>{const d=new Date(iso),h=d.getHours();return `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()} · ${h%12||12}:${pad(d.getMinutes())} ${h<12?'AM':'PM'}`};
+const dFull=iso=>{const d=new Date(iso);return `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}`};
+function relDay(iso){if(!iso)return '';const d=new Date(iso),n=new Date(),k=Math.round((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(n.getFullYear(),n.getMonth(),n.getDate()))/864e5);
+  const t=k===0?'Today':k===1?'Tomorrow':k===-1?'Yesterday':k>1?'in '+k+' days':-k+' days ago';
+  return `<i class="bk-rel ${k===0?'now':k>0?'fut':'past'}">${t}</i>`}
 
 /* ---------- overlay manager ---------- */
 const stack=[];
@@ -93,25 +96,45 @@ const book=mount(`<section class="modal bk-modal" role="dialog" aria-modal="true
 </section>`);
 
 const money=n=>(n<0?'−':n>0?'+':'')+'₹'+fmt(Math.abs(n));
+const ALL='__all__';
+const profitOf=e=>e.sell!=null?e.sell-e.buy-(e.tax||0):null;
+const DEN=['1k','2k','3k','4k','5k'];
+let lastKey='';
+function countUp(){
+  const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  book.querySelectorAll('.bk-stat b[data-v]').forEach(b=>{
+    const v=+b.dataset.v,kind=b.dataset.k,f=n=>kind==='pl'?money(n):'₹'+fmt(n);
+    if(reduce||!v){b.textContent=f(v);return}
+    const t0=performance.now();
+    (function step(t){const p=Math.min(1,(t-t0)/750);b.textContent=f(Math.round(v*(1-Math.pow(1-p,3))));if(p<1&&b.isConnected)requestAnimationFrame(step)})(t0);
+  });
+}
 function renderBook(){
-  if(!store.people.includes(active))active=store.people[0];
-  $('.bk-tabs',book).innerHTML=store.people.map(p=>`<button class="bk-tab ${p===active?'on':''}" role="tab" aria-selected="${p===active}" data-p="${esc(p)}">${esc(p)}</button>`).join('');
-  const es=store.entries.filter(e=>e.who===active).sort((a,b)=>b.buyAt.localeCompare(a.buyAt));
+  const all=active===ALL;
+  if(!all&&!store.people.includes(active))active=store.people[0];
+  $('.bk-tabs',book).innerHTML=store.people.map(p=>`<button class=\"bk-tab ${p===active?'on':''}\" role=\"tab\" aria-selected=\"${p===active}\" data-p=\"${esc(p)}\">${esc(p)}</button>`).join('')+
+    `<button class=\"bk-tab ${all?'on':''}\" role=\"tab\" aria-selected=\"${all}\" data-p=\"${ALL}\">All</button>`;
+  const es=store.entries.filter(e=>all||e.who===active).sort((a,b)=>b.buyAt.localeCompare(a.buyAt));
   const closed=es.filter(e=>e.sell!=null);
-  const invested=es.reduce((s,e)=>s+e.buy,0),returned=closed.reduce((s,e)=>s+e.sell,0),net=closed.reduce((s,e)=>s+e.sell-e.buy,0);
-  $('.bk-sum',book).innerHTML=`<div class="bk-stat"><small>Invested</small><b>₹${fmt(invested)}</b></div>
-    <div class="bk-stat"><small>Returned</small><b>₹${fmt(returned)}</b></div>
-    <div class="bk-stat"><small>Net profit</small><b class="${net>0?'up':net<0?'down':''}">${closed.length?money(net):'—'}</b></div>`;
+  const invested=es.reduce((s,e)=>s+e.buy,0),returned=closed.reduce((s,e)=>s+e.sell,0),net=closed.reduce((s,e)=>s+profitOf(e),0);
+  const key=active+'|'+invested+'|'+returned+'|'+net+'|'+es.length;
+  const fresh=key!==lastKey;lastKey=key;
+  $('.bk-sum',book).innerHTML=`<div class=\"bk-stat\"><small>Invested</small><b data-v=\"${invested}\" data-k=\"rs\">₹${fmt(invested)}</b></div>
+    <div class=\"bk-stat\"><small>Returned</small><b data-v=\"${returned}\" data-k=\"rs\">₹${fmt(returned)}</b></div>
+    <div class=\"bk-stat\"><small>Net profit</small><b class=\"${net>0?'up':net<0?'down':''}\" ${closed.length?`data-v=\"${net}\" data-k=\"pl\"`:''}>${closed.length?money(net):'—'}</b></div>`;
+  if(fresh)countUp();
   $('.bk-list',book).innerHTML=es.length?es.map((e,i)=>{
-    const d=e.sell!=null?e.sell-e.buy:null;
-    return `<article class="bk-row" style="animation-delay:${i*45}ms">
-      <div class="bk-price">${fmt(e.buy)} <span>→</span> ${e.sell!=null?fmt(e.sell):'—'}</div>
-      <div class="bk-pl ${d>0?'up':d<0?'down':''}">${d==null?'—':money(d)}<i>${d==null?'Holding':d>0?'Profit':d<0?'Loss':'Break-even'}</i></div>
-      <div class="bk-date">${dShort(e.buyAt)} <span>→</span> ${e.sellAt?dShort(e.sellAt):'—'}</div>
-      <div class="bk-st"><span class="pill s-${e.status.toLowerCase()}">${e.status}</span>
-        <button class="bk-del bk-ed" data-edit="${e.id}" aria-label="Edit entry" title="Edit">${ic.edit}</button>
-        <button class="bk-del" data-del="${e.id}" aria-label="Delete entry" title="Delete">${ic.trash}</button></div></article>`}).join('')
-   :`<div class="bk-empty"><b>No entries for ${esc(active)} yet</b><span>Tap “Add new entry” to record one.</span></div>`;
+    const d=profitOf(e),tax=e.tax||0,codes=(e.d||[]).map((n,j)=>n>0?`${n}×${DEN[j]}`:'').filter(Boolean);
+    const extra=[tax>0?`Tax ₹${fmt(tax)}`:'',codes.length?`Codes: ${codes.join(' · ')}`:''].filter(Boolean).join(' &nbsp;·&nbsp; ');
+    return `<article class=\"bk-row${fresh?'':' still'}\" style=\"animation-delay:${i*45}ms\">
+      <div class=\"bk-price\">${all?`<span class=\"bk-who\">${esc(e.who)}</span>`:''}${fmt(e.buy)} <span>→</span> ${e.sell!=null?fmt(e.sell):'—'}</div>
+      <div class=\"bk-pl ${d>0?'up':d<0?'down':''}\">${d==null?'—':money(d)}<i>${d==null?'Holding':d>0?'Profit':d<0?'Loss':'Break-even'}</i></div>
+      <div class=\"bk-date\">${dShort(e.buyAt)}${relDay(e.buyAt)} <span>→</span> ${e.sellAt?dShort(e.sellAt)+relDay(e.sellAt):'—'}</div>
+      <div class=\"bk-st\"><span class=\"pill s-${e.status.toLowerCase()}\">${e.status}</span>
+        <button class=\"bk-del bk-ed\" data-edit=\"${e.id}\" aria-label=\"Edit entry\" title=\"Edit\">${ic.edit}</button>
+        <button class=\"bk-del\" data-del=\"${e.id}\" aria-label=\"Delete entry\" title=\"Delete\">${ic.trash}</button></div>
+      ${extra?`<div class=\"bk-extra\">${extra}</div>`:''}</article>`}).join('')
+   :`<div class=\"bk-empty\"><b>No entries${all?'':' for '+esc(active)} yet</b><span>Tap “Add new entry” to record one.</span></div>`;
 }
 book.addEventListener('click',e=>{
   const t=e.target.closest('[data-p]');if(t){active=t.dataset.p;renderBook();return}
@@ -135,10 +158,13 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
     <div class="bk-two">
       <button type="button" class="bk-in bk-pick" data-pick="buyAt"></button>
       <button type="button" class="bk-in bk-pick" data-pick="sellAt"></button></div>
-    <span class="bk-lb">Price</span>
+    <span class="bk-lb">Amount</span>
     <div class="bk-two">
-      <label class="bk-money"><b>₹</b><input class="bk-in" id="enBuy" inputmode="decimal" placeholder="Purchased"></label>
-      <label class="bk-money"><b>₹</b><input class="bk-in" id="enSell" inputmode="decimal" placeholder="Sold"></label></div>
+      <label class="bk-money"><b>₹</b><input class="bk-in" id="enBuy" inputmode="decimal" placeholder="Invested"></label>
+      <label class="bk-money"><b>₹</b><input class="bk-in" id="enSell" inputmode="decimal" placeholder="Returning"></label></div>
+    <label class="bk-money"><b>₹</b><input class="bk-in" id="enTax" inputmode="decimal" placeholder="Taxes (optional)"></label>
+    <span class="bk-lb">Codes sent</span>
+    <div class="bk-codes">${DEN.map((n,i)=>`<label><small>${n}</small><input class="bk-in" id="enD${i}" inputmode="numeric" placeholder="0"></label>`).join('')}</div>
     <span class="bk-lb">Status</span>
     <div class="bk-seg" role="radiogroup">${['Purchased','Sold','Earned'].map(s=>`<button type="button" role="radio" data-s="${s}" data-ripple>${s}</button>`).join('')}</div>
     <p class="bk-err" role="alert" hidden></p>
@@ -148,8 +174,8 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
 let f;
 const closedStatus=()=>f.status!=='Purchased';
 function syncForm(){
-  $('[data-pick="buyAt"]',entry).innerHTML=`${ic.cal}<span class="${f.buyAt?'':'ph'}">${f.buyAt?dFull(f.buyAt):'Purchased date'}</span>`;
-  $('[data-pick="sellAt"]',entry).innerHTML=`${ic.cal}<span class="${f.sellAt?'':'ph'}">${f.sellAt?dFull(f.sellAt):'Sold date'}</span>`;
+  $('[data-pick="buyAt"]',entry).innerHTML=`${ic.cal}<span class="${f.buyAt?'':'ph'}">${f.buyAt?dFull(f.buyAt):'Date codes sent'}</span>`;
+  $('[data-pick="sellAt"]',entry).innerHTML=`${ic.cal}<span class="${f.sellAt?'':'ph'}">${f.sellAt?dFull(f.sellAt):'Received date'}</span>`;
   $('[data-pick="sellAt"]',entry).disabled=!closedStatus();
   $('#enSell',entry).disabled=!closedStatus();$('#enSell',entry).closest('.bk-money').classList.toggle('off',!closedStatus());
   entry.querySelectorAll('[data-s]').forEach(b=>{const on=b.dataset.s===f.status;b.classList.toggle('on',on);b.setAttribute('aria-checked',on)});
@@ -157,10 +183,12 @@ function syncForm(){
 let editing=null;
 function openEntry(ent){
   editing=ent||null;
-  f=ent?{who:ent.who,buyAt:ent.buyAt,sellAt:ent.sellAt||'',status:ent.status}:{who:'',buyAt:nowIso(),sellAt:'',status:'Purchased'};
+  f=ent?{who:ent.who,buyAt:ent.buyAt,sellAt:ent.sellAt||'',status:ent.status}:{who:active===ALL?'':active,buyAt:nowIso(),sellAt:'',status:'Purchased'};
   $('#enT',entry).textContent=ent?'Edit entry':'New entry';
   $('[data-a="save"]',entry).textContent=ent?'Save':'Add';
   $('#enWho',entry).value=f.who;$('#enBuy',entry).value=ent?ent.buy:'';$('#enSell',entry).value=ent&&ent.sell!=null?ent.sell:'';
+  $('#enTax',entry).value=ent&&ent.tax?ent.tax:'';
+  DEN.forEach((n,i)=>{$('#enD'+i,entry).value=ent&&ent.d&&ent.d[i]?ent.d[i]:''});
   $('#enPeople',entry).innerHTML=store.people.map(p=>`<option value="${esc(p)}">`).join('');
   $('.bk-err',entry).hidden=true;syncForm();open(entry);
 }
@@ -176,17 +204,20 @@ function saveEntry(){
   let who=$('#enWho',entry).value.trim();
   const buy=parseFloat($('#enBuy',entry).value),sell=parseFloat($('#enSell',entry).value);
   if(!who)return err('Enter the investor’s name.');
-  if(!(buy>0))return err('Enter the purchase price.');
+  if(!(buy>0))return err('Enter the invested amount.');
   if(closedStatus()){
-    if(!(sell>=0))return err('Enter the sold price.');
-    if(!f.sellAt)return err('Pick the sold date.');
-    if(f.sellAt<f.buyAt)return err('Sold date can’t be before the purchase date.');
+    if(!(sell>=0))return err('Enter the returning amount.');
+    if(!f.sellAt)return err('Pick the received date.');
+    if(f.sellAt<f.buyAt)return err('Received date can’t be before the date codes were sent.');
   }
+  const tax=parseFloat($('#enTax',entry).value)||0;
+  if(tax<0)return err('Taxes can’t be negative.');
+  const d=DEN.map((n,i)=>Math.max(0,parseInt($('#enD'+i,entry).value,10)||0));
   const known=store.people.find(p=>p.toLowerCase()===who.toLowerCase());
   if(known)who=known;else store.people.push(who);
-  const o={who,buyAt:f.buyAt,sellAt:closedStatus()?f.sellAt:null,buy,sell:closedStatus()?sell:null,status:f.status};
+  const o={who,buyAt:f.buyAt,sellAt:closedStatus()?f.sellAt:null,buy,sell:closedStatus()?sell:null,tax,d,status:f.status};
   editing?Object.assign(editing,o):store.entries.push({id:uid(),...o});
-  save();active=who;renderBook();close(entry);
+  save();if(active!==ALL)active=who;renderBook();close(entry);
 }
 
 /* ---------- Calendar picker (Google Calendar style) ---------- */
@@ -194,8 +225,8 @@ const cal=mount(`<section class="modal bk-calm" role="dialog" aria-modal="true" 
 const calEl=$('.bk-calm',cal);
 let C;
 function openCal(iso,clearable,cb){
-  const d=new Date(iso),h=d.getHours();
-  C={y:d.getFullYear(),m:d.getMonth(),mode:'days',sel:{y:d.getFullYear(),m:d.getMonth(),d:d.getDate()},h:h%12||12,mi:d.getMinutes(),ap:h<12?'AM':'PM',clearable,cb};
+  const d=new Date(iso);
+  C={y:d.getFullYear(),m:d.getMonth(),mode:'days',sel:{y:d.getFullYear(),m:d.getMonth(),d:d.getDate()},clearable,cb};
   drawCal();open(cal);
 }
 const same=(a,y,m,d)=>a&&a.y===y&&a.m===m&&a.d===d;
@@ -208,22 +239,13 @@ function drawCal(){
         return `<button class="bk-day ${m!==C.m?'out':''} ${same({y:t.getFullYear(),m:t.getMonth(),d:t.getDate()},y,m,n)?'today':''} ${same(C.sel,y,m,n)?'sel':''}" data-c="day" data-y="${y}" data-m="${m}" data-d="${n}">${n}</button>`}).join('')+`</div>`;
   }else body=`<div class="bk-mons">`+MON.map((n,i)=>`<button class="bk-mon ${C.sel&&C.sel.y===C.y&&C.sel.m===i?'sel':''} ${t.getFullYear()===C.y&&t.getMonth()===i?'today':''}" data-c="mon" data-m="${i}">${n}</button>`).join('')+`</div>`;
   if(C.mode==='years')body=`<div class="bk-mons bk-yrs">`+Array.from({length:201},(_,i)=>1900+i).map(y=>`<button class="bk-mon ${y===C.y?'sel':''} ${y===t.getFullYear()?'today':''}" data-c="yr" data-y="${y}">${y}</button>`).join('')+`</div>`;
-  const opt=(arr,v)=>arr.map(x=>`<option ${x==v?'selected':''}>${typeof x==='number'?pad(x):x}</option>`).join('');
   calEl.innerHTML=`<div class="bk-ch"><div class="bk-cts">${C.mode==='days'?`<button class="bk-ct" data-c="mode">${MONF[C.m]} ${ic.dn}</button>`:''}${C.mode==='years'?`<span class="bk-ct">Select year</span>`:`<button class="bk-ct" data-c="years">${C.y} ${ic.dn}</button>`}</div>
     ${C.mode==='years'?'':`<div class="bk-nav"><button class="btn icon sm" data-ripple data-c="prev" aria-label="Previous">${ic.l}</button><button class="btn icon sm" data-ripple data-c="next" aria-label="Next">${ic.r}</button></div>`}</div>
     ${body}
-    <div class="bk-time">${ic.clock}
-      <select class="bk-sel" data-t="h" aria-label="Hour">${opt([1,2,3,4,5,6,7,8,9,10,11,12].map(String),C.h)}</select><b>:</b>
-      <input class="bk-sel bk-min" data-t="mi" inputmode="numeric" maxlength="2" aria-label="Minute" value="${pad(C.mi)}">
-      <select class="bk-sel" data-t="ap" aria-label="AM or PM">${opt(['AM','PM'],C.ap)}</select>
-      <button class="bk-link" data-c="today">Today</button></div>
-    <div class="bk-ca">${C.clearable?'<button class="bk-link" data-c="clear">Clear</button>':'<span></span>'}
+    <div class="bk-ca"><span>${C.clearable?'<button class="bk-link" data-c="clear">Clear</button>':''}<button class="bk-link" data-c="today">Today</button></span>
       <span><button class="bk-link" data-x>Cancel</button><button class="bk-link strong" data-c="ok" ${C.sel?'':'disabled'}>OK</button></span></div>`;
   const ys=calEl.querySelector('.bk-yrs'),sy=ys&&ys.querySelector('.sel');if(sy)ys.scrollTop=sy.offsetTop-ys.clientHeight/2+sy.offsetHeight/2;
 }
-cal.addEventListener('change',e=>{const k=e.target.dataset.t;if(!k)return;if(k==='ap')C.ap=e.target.value;
-  else if(k==='mi'){const v=Math.min(59,Math.max(0,parseInt(e.target.value,10)||0));C.mi=v;e.target.value=pad(v)}
-  else C.h=parseInt(e.target.value,10)});
 cal.addEventListener('click',e=>{
   const b=e.target.closest('[data-c]');if(!b)return;const a=b.dataset.c;
   if(a==='day'){C.sel={y:+b.dataset.y,m:+b.dataset.m,d:+b.dataset.d};C.y=C.sel.y;C.m=C.sel.m}
@@ -235,7 +257,7 @@ cal.addEventListener('click',e=>{
     if(C.mode==='years')C.y0+=12*s;else if(C.mode==='months')C.y+=s;else{C.m+=s;if(C.m<0){C.m=11;C.y--}if(C.m>11){C.m=0;C.y++}}}
   else if(a==='today'){const t=new Date();C.y=t.getFullYear();C.m=t.getMonth();C.sel={y:C.y,m:C.m,d:t.getDate()};C.mode='days'}
   else if(a==='clear'){C.cb('');close(cal);return}
-  else if(a==='ok'){if(!C.sel)return;C.cb(isoOf(C.sel.y,C.sel.m,C.sel.d,C.h%12+(C.ap==='PM'?12:0),C.mi));close(cal);return}
+  else if(a==='ok'){if(!C.sel)return;C.cb(isoOf(C.sel.y,C.sel.m,C.sel.d));close(cal);return}
   drawCal();
 });
 
@@ -244,6 +266,6 @@ const btn=document.createElement('button');
 btn.id='bookBtn';btn.className='btn icon';btn.setAttribute('data-ripple','');btn.setAttribute('aria-label','Investor book');btn.title='Investor book';btn.innerHTML=ic.book;
 const trend=document.getElementById('trendBtn');
 trend?trend.after(btn):document.querySelector('.actions')?.prepend(btn);
-btn.addEventListener('click',()=>{renderBook();open(book);if(ensureKey())pull()});
+btn.addEventListener('click',()=>{lastKey='';renderBook();open(book);if(ensureKey())pull()});
 setInterval(()=>{if(!book.hidden&&getKey())pull()},8000);
 })();
