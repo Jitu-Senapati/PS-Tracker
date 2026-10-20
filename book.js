@@ -41,7 +41,7 @@ function setNote(t){const p=document.querySelector('#bkT')&&document.querySelect
 const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}};
 const sig=o=>JSON.stringify([o.people,[...o.entries].sort((a,b)=>a.id<b.id?-1:1)]);
 async function pull(){
-  if(pushing||(typeof entry!=='undefined'&&entry&&!entry.hidden))return;
+  if(pushing||G||(typeof hold!=='undefined'&&!hold.hidden)||(typeof entry!=='undefined'&&entry&&!entry.hidden))return;
   try{const d=await api('GET',''),next={people:d.people,entries:d.entries};
     if(sig(next)!==sig(store)){store=next;saveLocal();renderBook()}
     synced=JSON.stringify(store);setNote('shared')}
@@ -60,6 +60,7 @@ async function push(){
 }
 const save=()=>{saveLocal();push()};
 let active=store.people[0];
+let G=null; // press / drag gesture on a card
 
 /* ---------- date helpers ---------- */
 const isoOf=(y,m,d,h=0,mi=0)=>`${y}-${pad(m+1)}-${pad(d)}T${pad(h)}:${pad(mi)}`;
@@ -100,6 +101,7 @@ const book=mount(`<section class="modal bk-modal" role="dialog" aria-modal="true
 
 const money=n=>(n<0?'−':n>0?'+':'')+'₹'+fmt(Math.abs(n));
 const ALL='__all__';
+const cmp=(a,b)=>{const x=a.o!=null,y=b.o!=null;if(x&&y)return a.o-b.o||(a.id<b.id?-1:1);if(x!==y)return x?1:-1;return b.buyAt.localeCompare(a.buyAt)||(a.id<b.id?-1:1)};
 const profitOf=e=>e.sell!=null?e.sell-e.buy:null;
 const DEN=['1k','2k','3k','4k','5k'];
 let lastKey='';
@@ -117,7 +119,7 @@ function renderBook(){
   if(!all&&!store.people.includes(active))active=store.people[0];
   $('.bk-tabs',book).innerHTML=store.people.map(p=>`<button class=\"bk-tab ${p===active?'on':''}\" role=\"tab\" aria-selected=\"${p===active}\" data-p=\"${esc(p)}\">${esc(p)}</button>`).join('')+
     `<button class=\"bk-tab ${all?'on':''}\" role=\"tab\" aria-selected=\"${all}\" data-p=\"${ALL}\">All</button>`;
-  const es=store.entries.filter(e=>all||e.who===active).sort((a,b)=>b.buyAt.localeCompare(a.buyAt));
+  const es=store.entries.filter(e=>all||e.who===active).sort(cmp);
   const closed=es.filter(e=>e.sell!=null);
   const invested=es.reduce((s,e)=>s+e.buy,0),returned=closed.reduce((s,e)=>s+e.sell,0),net=closed.reduce((s,e)=>s+profitOf(e),0);
   const key=active+'|'+invested+'|'+returned+'|'+net+'|'+es.length;
@@ -129,25 +131,107 @@ function renderBook(){
   $('.bk-list',book).innerHTML=es.length?es.map((e,i)=>{
     const d=profitOf(e),tax=e.tax||0,codes=(e.d||[]).map((n,j)=>n>0?`${n}×${DEN[j]}`:'').filter(Boolean);
     const extra=[tax>0?`Tax ₹${fmt(tax)}`:'',codes.length?codes.join(' · '):''].filter(Boolean).join(' · ');
-    return `<article class=\"bk-row${fresh?'':' still'}\" style=\"animation-delay:${i*45}ms\">
-      <div class=\"bk-price\">${all?`<span class=\"bk-who\">${esc(e.who)}</span>`:''}${fmt(e.buy)} <span>→</span> ${e.sell!=null?fmt(e.sell):'—'}${extra?`<span class=\"bk-extra\">${extra}</span>`:''}</div>
-      <div class=\"bk-pl ${d>0?'up':d<0?'down':''}\">${d==null?'—':money(d)}<i>${d==null?'Holding':d>0?'Profit':d<0?'Loss':'Break-even'}</i></div>
-      <div class=\"bk-date\">${dShort(e.buyAt)}${relDay(e.buyAt)} <span>→</span> ${e.sellAt?dShort(e.sellAt)+relDay(e.sellAt):'—'}</div>
-      <div class=\"bk-st\"><span class=\"pill s-${e.status.toLowerCase()}\">${e.status}</span>
-        <button class=\"bk-del bk-ed\" data-edit=\"${e.id}\" aria-label=\"Edit entry\" title=\"Edit\">${ic.edit}</button>
-        <button class=\"bk-del\" data-del=\"${e.id}\" aria-label=\"Delete entry\" title=\"Delete\">${ic.trash}</button></div></article>`}).join('')
+    return `<article class="bk-row${fresh?'':' still'}" data-id="${e.id}" style="animation-delay:${i*45}ms">
+      <div class="bk-price">${all?`<span class="bk-who">${esc(e.who)}</span>`:''}${fmt(e.buy)} <span>→</span> ${e.sell!=null?fmt(e.sell):'—'}${extra?`<span class="bk-extra">${extra}</span>`:''}</div>
+      <div class="bk-pl ${d>0?'up':d<0?'down':''}">${d==null?'—':money(d)}<i>${d==null?'Holding':d>0?'Profit':d<0?'Loss':'Break-even'}</i></div>
+      <div class="bk-date">${e.purAt?`<div class="bk-pur">Purchased ${dShort(e.purAt)}${relDay(e.purAt)}</div>`:''}${dShort(e.buyAt)}${relDay(e.buyAt)} <span>→</span> ${e.sellAt?dShort(e.sellAt)+relDay(e.sellAt):'—'}</div>
+      <div class="bk-st"><span class="pill s-${e.status.toLowerCase()}">${e.status}</span></div></article>`}).join('')
    :`<div class=\"bk-empty\"><b>No entries${all?'':' for '+esc(active)} yet</b><span>Tap “Add new entry” to record one.</span></div>`;
 }
 book.addEventListener('click',e=>{
   const t=e.target.closest('[data-p]');if(t){active=t.dataset.p;renderBook();return}
-  const ed=e.target.closest('[data-edit]');if(ed){openEntry(store.entries.find(x=>x.id===ed.dataset.edit));return}
-  if(e.target.closest('[data-a="add"]')){openEntry();return}
-  const del=e.target.closest('[data-del]');if(del){
-    if(del.dataset.armed){store.entries=store.entries.filter(x=>x.id!==del.dataset.del);save();renderBook()}
-    else{del.dataset.armed=1;del.classList.add('arm');del.textContent='Delete?';
-      setTimeout(()=>{if(del.isConnected){delete del.dataset.armed;del.classList.remove('arm');del.innerHTML=ic.trash}},2500)}
-  }
+  if(e.target.closest('[data-a="add"]'))openEntry();
 });
+
+/* ---------- press & hold a card: Edit / Delete over a blurred page; keep holding and drag to reorder ---------- */
+const hold=mount(`<div class="bk-hc"></div><div class="bk-ha"><button type="button" class="bk-hb" data-h="edit">${ic.edit}<span>Edit</span></button><button type="button" class="bk-hb del" data-h="del">${ic.trash}<span>Delete</span></button></div>`,'bk-hold');
+const holdBox=$('.bk-hc',hold),holdAct=$('.bk-ha',hold),delBtn=$('[data-h="del"]',hold),list=$('.bk-list',book);
+let heldId=null,armTimer=0,suppress=0;
+const delLabel=t=>{delBtn.innerHTML=ic.trash+'<span>'+t+'</span>'};
+function closeNow(o){if(o.hidden)return;o.classList.remove('closing');o.hidden=true;const i=stack.indexOf(o);if(i>-1)stack.splice(i,1);if(!stack.length)document.body.style.overflow=''}
+function showHold(row){
+  const r=row.getBoundingClientRect(),c=row.cloneNode(true),bh=52;
+  heldId=row.dataset.id;
+  c.classList.remove('still');c.classList.add('bk-lift');c.removeAttribute('style');
+  Object.assign(c.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px'});
+  holdBox.replaceChildren(c);
+  const below=r.bottom+10+bh<=innerHeight-12;
+  Object.assign(holdAct.style,{left:r.left+'px',width:r.width+'px',top:(below?r.bottom+10:Math.max(12,r.top-10-bh))+'px'});
+  clearTimeout(armTimer);delete delBtn.dataset.armed;delBtn.classList.remove('arm');delLabel('Delete');
+  open(hold);
+}
+hold.addEventListener('click',e=>{
+  const b=e.target.closest('[data-h]');if(!b)return;
+  const ent=store.entries.find(x=>x.id===heldId);if(!ent){close(hold);return}
+  if(b.dataset.h==='edit'){close(hold);openEntry(ent);return}
+  if(b.dataset.armed){store.entries=store.entries.filter(x=>x.id!==heldId);save();renderBook();close(hold)}
+  else{b.dataset.armed=1;b.classList.add('arm');delLabel('Delete?');clearTimeout(armTimer);
+    armTimer=setTimeout(()=>{delete b.dataset.armed;b.classList.remove('arm');delLabel('Delete')},2500)}
+});
+
+function applyOrder(ids){
+  const all=[...store.entries].sort(cmp),vis=new Set(ids),slots=[],byId=new Map(all.map(e=>[e.id,e]));
+  all.forEach((e,i)=>{if(vis.has(e.id))slots.push(i)});
+  ids.forEach((id,k)=>{all[slots[k]]=byId.get(id)});
+  all.forEach((e,i)=>{if(e.o!==i)e.o=i});
+  save();renderBook();
+}
+function gClean(){
+  if(!G)return;clearTimeout(G.timer);cancelAnimationFrame(G.raf);
+  removeEventListener('pointermove',gMove);removeEventListener('pointerup',gEnd);removeEventListener('pointercancel',gEnd);G=null;
+}
+function startDrag(){
+  closeNow(hold);
+  const rows=[...list.querySelectorAll('.bk-row')];
+  G.rows=rows;G.i=rows.indexOf(G.row);G.t=G.i;G.s0=list.scrollTop;
+  G.pos=rows.map(r=>({t:r.offsetTop,h:r.offsetHeight}));
+  G.gap=parseFloat(getComputedStyle(G.row).marginBottom)||0;
+  G.state='drag';G.row.classList.add('drag');rows.forEach(r=>{if(r!==G.row)r.classList.add('shift')});
+  list.classList.add('dragging');loop();dragTo();
+}
+function dragTo(){
+  const {rows,i,pos}=G,dy=G.cy-G.y+(list.scrollTop-G.s0),h=pos[i].h+G.gap,c=pos[i].t+pos[i].h/2+dy;
+  G.row.style.transform=`translateY(${dy}px) scale(1.02)`;
+  let t=0;pos.forEach((p,j)=>{if(j!==i&&p.t+p.h/2<c)t++});
+  G.t=t;
+  rows.forEach((r,j)=>{if(j!==i)r.style.transform=(i<j&&j<=t)?`translateY(${-h}px)`:(t<=j&&j<i)?`translateY(${h}px)`:''});
+}
+function loop(){
+  if(!G||G.state!=='drag')return;
+  const r=list.getBoundingClientRect(),z=56,y=G.cy;let v=0;
+  if(y<r.top+z)v=-Math.min(14,(r.top+z-y)/4);else if(y>r.bottom-z)v=Math.min(14,(y-(r.bottom-z))/4);
+  if(v){list.scrollTop+=v;dragTo()}
+  G.raf=requestAnimationFrame(loop);
+}
+function gMove(e){
+  if(!G)return;G.cy=e.clientY;
+  const dist=Math.hypot(e.clientX-G.x,e.clientY-G.y);
+  if(G.state==='wait'){if(dist>10)gClean();return}
+  if(G.state==='held'){if(dist>14)startDrag();return}
+  dragTo();
+}
+function gEnd(){
+  if(!G)return;
+  if(G.state==='drag'){
+    const {rows,i,t}=G;
+    rows.forEach(r=>{r.style.transform='';r.classList.remove('drag','shift')});list.classList.remove('dragging');
+    const ids=rows.map(r=>r.dataset.id);
+    gClean();
+    if(t!==i){const [m]=ids.splice(i,1);ids.splice(t,0,m);applyOrder(ids)}
+    return;
+  }
+  gClean();
+}
+list.addEventListener('pointerdown',e=>{
+  if(e.button>0||G)return;
+  const row=e.target.closest('.bk-row');if(!row)return;
+  G={row,x:e.clientX,y:e.clientY,cy:e.clientY,state:'wait'};
+  G.timer=setTimeout(()=>{if(!G||G.state!=='wait')return;G.state='held';suppress=Date.now()+700;if(navigator.vibrate)navigator.vibrate(12);showHold(row)},420);
+  addEventListener('pointermove',gMove);addEventListener('pointerup',gEnd);addEventListener('pointercancel',gEnd);
+});
+list.addEventListener('touchmove',e=>{if(G&&G.state!=='wait'&&e.cancelable)e.preventDefault()},{passive:false});
+list.addEventListener('contextmenu',e=>{if(e.target.closest('.bk-row'))e.preventDefault()});
+book.addEventListener('click',e=>{if(Date.now()<suppress){e.stopPropagation();e.preventDefault()}},true);
 
 /* ---------- New entry ---------- */
 const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true" aria-labelledby="enT">
@@ -157,6 +241,7 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
     <label class="bk-lb" for="enWho">Investor</label>
     <input class="bk-in" id="enWho" list="enPeople" placeholder="New or existing investor" autocomplete="off"><datalist id="enPeople"></datalist>
     <span class="bk-lb">Date</span>
+    <button type="button" class="bk-in bk-pick" data-pick="purAt"></button>
     <div class="bk-two">
       <button type="button" class="bk-in bk-pick" data-pick="buyAt"></button>
       <button type="button" class="bk-in bk-pick" data-pick="sellAt"></button></div>
@@ -176,6 +261,7 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
 let f;
 const closedStatus=()=>f.status!=='Purchased';
 function syncForm(){
+  $('[data-pick="purAt"]',entry).innerHTML=`${ic.cal}<span class="${f.purAt?'':'ph'}">${f.purAt?dFull(f.purAt):'Purchased date'}</span>`;
   $('[data-pick="buyAt"]',entry).innerHTML=`${ic.cal}<span class="${f.buyAt?'':'ph'}">${f.buyAt?dFull(f.buyAt):'Date codes sent'}</span>`;
   $('[data-pick="sellAt"]',entry).innerHTML=`${ic.cal}<span class="${f.sellAt?'':'ph'}">${f.sellAt?dFull(f.sellAt):'Received date'}</span>`;
   $('[data-pick="sellAt"]',entry).disabled=!closedStatus();
@@ -185,7 +271,7 @@ function syncForm(){
 let editing=null;
 function openEntry(ent){
   editing=ent||null;
-  f=ent?{who:ent.who,buyAt:ent.buyAt,sellAt:ent.sellAt||'',status:ent.status}:{who:active===ALL?'':active,buyAt:nowIso(),sellAt:'',status:'Purchased'};
+  f=ent?{who:ent.who,purAt:ent.purAt||'',buyAt:ent.buyAt,sellAt:ent.sellAt||'',status:ent.status}:{who:active===ALL?'':active,purAt:nowIso(),buyAt:nowIso(),sellAt:'',status:'Purchased'};
   $('#enT',entry).textContent=ent?'Edit entry':'New entry';
   $('[data-a="save"]',entry).textContent=ent?'Save':'Add';
   $('#enWho',entry).value=f.who;$('#enBuy',entry).value=ent?ent.buy:'';$('#enSell',entry).value=ent&&ent.sell!=null?ent.sell:'';
@@ -196,7 +282,7 @@ function openEntry(ent){
 }
 entry.addEventListener('click',e=>{
   const p=e.target.closest('[data-pick]');
-  if(p&&!p.disabled){const k=p.dataset.pick;openCal(f[k]||nowIso(),k==='sellAt',v=>{f[k]=v;syncForm()});return}
+  if(p&&!p.disabled){const k=p.dataset.pick;openCal(f[k]||nowIso(),k!=='buyAt',v=>{f[k]=v;syncForm()});return}
   const s=e.target.closest('[data-s]');
   if(s){f.status=s.dataset.s;if(closedStatus()&&!f.sellAt)f.sellAt=nowIso();syncForm();return}
   if(e.target.closest('[data-a="save"]'))saveEntry();
@@ -212,12 +298,13 @@ function saveEntry(){
     if(!f.sellAt)return err('Pick the received date.');
     if(f.sellAt<f.buyAt)return err('Received date can’t be before the date codes were sent.');
   }
+  if(f.purAt&&f.purAt.slice(0,10)>f.buyAt.slice(0,10))return err('Codes can’t be sent before they were purchased.');
   const tax=parseFloat($('#enTax',entry).value)||0;
   if(tax<0)return err('Taxes can’t be negative.');
   const d=DEN.map((n,i)=>Math.max(0,parseInt($('#enD'+i,entry).value,10)||0));
   const known=store.people.find(p=>p.toLowerCase()===who.toLowerCase());
   if(known)who=known;else store.people.push(who);
-  const o={who,buyAt:f.buyAt,sellAt:closedStatus()?f.sellAt:null,buy,sell:closedStatus()?sell:null,tax,d,status:f.status};
+  const o={who,purAt:f.purAt||null,buyAt:f.buyAt,sellAt:closedStatus()?f.sellAt:null,buy,sell:closedStatus()?sell:null,tax,d,status:f.status};
   editing?Object.assign(editing,o):store.entries.push({id:uid(),...o});
   save();if(active!==ALL)active=who;renderBook();close(entry);
 }

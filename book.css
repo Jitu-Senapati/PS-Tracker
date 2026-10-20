@@ -108,3 +108,22 @@
 .bk-hint{position:absolute;left:30px;top:50%;transform:translateY(-50%);color:var(--mut);pointer-events:none;white-space:nowrap}
 .bk-hint small{font-size:.7rem;font-weight:300;opacity:.85}
 .bk-money .bk-in:not(:placeholder-shown)~.bk-hint{display:none}
+
+/* cards: rounded, lightly shaded like the totals; press & hold; drag to reorder */
+.bk-list{position:relative}
+.bk-row{padding:8px 14px;margin:0 0 8px;background:var(--raise);border:1px solid var(--stroke);border-radius:14px;touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.bk-row.shift{transition:transform .2s var(--ease)}
+.bk-row.drag{position:relative;z-index:5;transition:none;animation:none;opacity:1;border-color:var(--acc);box-shadow:0 14px 30px -10px #000}
+.bk-list.dragging{cursor:grabbing}
+.bk-pur{margin-bottom:2px}
+.overlay.bk-hold{z-index:40;display:block}
+.overlay.bk-hold[hidden]{display:none}
+.bk-hc .bk-row{position:fixed;margin:0;opacity:1;animation:none;border-color:var(--acc);box-shadow:0 18px 40px -12px #000}
+.bk-hc .bk-row.bk-lift{animation:bkLift .22s var(--spring) forwards}
+@keyframes bkLift{from{transform:scale(1)}to{transform:scale(1.02)}}
+.bk-ha{position:fixed;display:grid;grid-template-columns:1fr 1fr;gap:10px;animation:rise .3s var(--ease) both}
+.bk-hb{display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:14px;border:1px solid var(--stroke);background:var(--surface);color:var(--ink);font:inherit;font-weight:650;cursor:pointer;transition:background .2s,color .2s,border-color .2s}
+.bk-hb svg{width:18px;height:18px}
+.bk-hb:hover{background:var(--raise)}
+.bk-hb.del{color:var(--red)}
+.bk-hb.del.arm{background:rgba(239,106,106,.15);border-color:var(--red)}
