@@ -96,10 +96,15 @@
 .bk-rel.past{color:var(--mut);background:var(--raise)}
 .bk-row{grid-template-columns:1fr auto}
 .bk-row.still{animation:none;opacity:1}
-.bk-extra{grid-column:1/-1;font-size:.78rem;color:var(--mut);font-variant-numeric:tabular-nums}
+.bk-price .bk-extra{display:inline-block;margin-left:10px;font-size:.74rem;font-weight:500;color:var(--mut);vertical-align:2px}
 .bk-who{display:inline-block;margin-right:8px;padding:2px 9px;border-radius:99px;font-size:.72rem;font-weight:650;color:var(--acc);background:var(--acc-soft);vertical-align:2px}
 .bk-codes{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 .bk-codes label{display:grid;gap:4px;min-width:0}
 .bk-codes small{font-size:.7rem;font-weight:650;color:var(--mut);text-align:center}
 .bk-codes .bk-in{padding:0 4px;text-align:center}
 .bk-ca{margin-top:12px;padding-top:10px;border-top:1px solid var(--stroke)}
+
+/* invested placeholder with a small thin "(inc tax)" hint */
+.bk-hint{position:absolute;left:30px;top:50%;transform:translateY(-50%);color:var(--mut);pointer-events:none;white-space:nowrap}
+.bk-hint small{font-size:.7rem;font-weight:300;opacity:.85}
+.bk-money .bk-in:not(:placeholder-shown)~.bk-hint{display:none}

@@ -97,7 +97,7 @@ const book=mount(`<section class="modal bk-modal" role="dialog" aria-modal="true
 
 const money=n=>(n<0?'−':n>0?'+':'')+'₹'+fmt(Math.abs(n));
 const ALL='__all__';
-const profitOf=e=>e.sell!=null?e.sell-e.buy-(e.tax||0):null;
+const profitOf=e=>e.sell!=null?e.sell-e.buy:null;
 const DEN=['1k','2k','3k','4k','5k'];
 let lastKey='';
 function countUp(){
@@ -125,15 +125,14 @@ function renderBook(){
   if(fresh)countUp();
   $('.bk-list',book).innerHTML=es.length?es.map((e,i)=>{
     const d=profitOf(e),tax=e.tax||0,codes=(e.d||[]).map((n,j)=>n>0?`${n}×${DEN[j]}`:'').filter(Boolean);
-    const extra=[tax>0?`Tax ₹${fmt(tax)}`:'',codes.length?`Codes: ${codes.join(' · ')}`:''].filter(Boolean).join(' &nbsp;·&nbsp; ');
+    const extra=[tax>0?`Tax ₹${fmt(tax)}`:'',codes.length?codes.join(' · '):''].filter(Boolean).join(' · ');
     return `<article class=\"bk-row${fresh?'':' still'}\" style=\"animation-delay:${i*45}ms\">
-      <div class=\"bk-price\">${all?`<span class=\"bk-who\">${esc(e.who)}</span>`:''}${fmt(e.buy)} <span>→</span> ${e.sell!=null?fmt(e.sell):'—'}</div>
+      <div class=\"bk-price\">${all?`<span class=\"bk-who\">${esc(e.who)}</span>`:''}${fmt(e.buy)} <span>→</span> ${e.sell!=null?fmt(e.sell):'—'}${extra?`<span class=\"bk-extra\">${extra}</span>`:''}</div>
       <div class=\"bk-pl ${d>0?'up':d<0?'down':''}\">${d==null?'—':money(d)}<i>${d==null?'Holding':d>0?'Profit':d<0?'Loss':'Break-even'}</i></div>
       <div class=\"bk-date\">${dShort(e.buyAt)}${relDay(e.buyAt)} <span>→</span> ${e.sellAt?dShort(e.sellAt)+relDay(e.sellAt):'—'}</div>
       <div class=\"bk-st\"><span class=\"pill s-${e.status.toLowerCase()}\">${e.status}</span>
         <button class=\"bk-del bk-ed\" data-edit=\"${e.id}\" aria-label=\"Edit entry\" title=\"Edit\">${ic.edit}</button>
-        <button class=\"bk-del\" data-del=\"${e.id}\" aria-label=\"Delete entry\" title=\"Delete\">${ic.trash}</button></div>
-      ${extra?`<div class=\"bk-extra\">${extra}</div>`:''}</article>`}).join('')
+        <button class=\"bk-del\" data-del=\"${e.id}\" aria-label=\"Delete entry\" title=\"Delete\">${ic.trash}</button></div></article>`}).join('')
    :`<div class=\"bk-empty\"><b>No entries${all?'':' for '+esc(active)} yet</b><span>Tap “Add new entry” to record one.</span></div>`;
 }
 book.addEventListener('click',e=>{
@@ -160,7 +159,7 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
       <button type="button" class="bk-in bk-pick" data-pick="sellAt"></button></div>
     <span class="bk-lb">Amount</span>
     <div class="bk-two">
-      <label class="bk-money"><b>₹</b><input class="bk-in" id="enBuy" inputmode="decimal" placeholder="Invested"></label>
+      <label class="bk-money"><b>₹</b><input class="bk-in" id="enBuy" inputmode="decimal" placeholder=" "><span class="bk-hint">Invested <small>(inc tax)</small></span></label>
       <label class="bk-money"><b>₹</b><input class="bk-in" id="enSell" inputmode="decimal" placeholder="Returning"></label></div>
     <label class="bk-money"><b>₹</b><input class="bk-in" id="enTax" inputmode="decimal" placeholder="Taxes (optional)"></label>
     <span class="bk-lb">Codes sent</span>
