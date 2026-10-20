@@ -2,11 +2,11 @@
 // s: 1 = in stock, 0 = out of stock.  u: link to that product (falls back to the platform's `home` link).
 // p: current price in rupees (optional).  d: price difference (optional).
 // domain: website used to fetch the real logo.  No domain = letter badge until a link is added.
-const LAST_UPDATED = '19 Oct 2026';
+const LAST_UPDATED = '20 Oct 2026';
 const PLATFORMS = [
   {name:'Amazon', logo:'amazon', home:'https://www.amazon.in/dp/B0C1GYD3KN', items:[{v:1000, s:0, u:'https://www.amazon.in/dp/B07K6RYVHR'}, {v:2000, s:0, u:'https://www.amazon.in/dp/B093QF35KZ'}, {v:3000, s:0, u:'https://www.amazon.in/dp/B07K6PVR8B'}, {v:4000, s:0, u:'https://www.amazon.in/dp/B07K6RYVJ5'}, {v:5000, s:0, u:'https://www.amazon.in/dp/B0B3DDW7TB'}, {label:'Custom', s:0, u:'https://www.amazon.in/dp/B0C1GYD3KN'}]},
   {name:'PhonePe', domain:'phonepe.com', home:'https://www.phonepe.com/', items:[{v:1000, s:0}, {v:2000, s:0}, {v:5000, s:0}]},
-  {name:'Flipkart', logo:'flipkart', home:'https://www.flipkart.com/search?q=playstation%20gift%20card', items:[{v:1000, s:0, u:'https://dl.flipkart.com/s/PIJrJ!uuuN'}, {v:2000, s:0}, {v:5000, s:0}]},
+  {name:'Flipkart', logo:'flipkart', home:'https://www.flipkart.com/search?q=playstation+store+gift+card+india&sid=mcd%2Czyx%2Czzo', items:[{v:1000, s:0, u:'https://www.flipkart.com/playstation-rs-1000-inr-gift-card/p/itm3d59225ae5e13'}, {v:2000, s:0, u:'https://www.flipkart.com/playstation-rs-2000-inr-gift-card/p/itmd41e56cc4ca04'}, {v:3000, s:0, u:'https://www.flipkart.com/sony-playstation-store-gift-card/p/itma3cec289dd512'}, {v:4000, s:0, u:'https://www.flipkart.com/sony-interactive-entertainment-europe-playstation-store-gift-card-4000-inr/p/itm5cb36d77285f5'}, {v:5000, s:0, u:'https://www.flipkart.com/sony-interactive-entertainment-europe-playstation-store-gift-card-5000-inr/p/itmb079e5a22622c'}]},
   {name:'Gyftr', domain:'gyftr.com', home:'https://www.gyftr.com/', items:[{v:1000, s:0}, {v:2000, s:0}, {v:5000, s:0}]},
   {name:'Jio Store', domain:'jiogames.com', home:'https://store.jiogames.com/products/?brand=playstation', items:[{v:1000, s:0}, {v:2000, s:0, p:2000}, {v:5000, s:0}]},
   {name:'Hubble', items:[{v:1000, s:0}, {v:2000, s:0}, {v:5000, s:0}]},
