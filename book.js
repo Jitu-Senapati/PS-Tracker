@@ -101,7 +101,8 @@ const book=mount(`<section class="modal bk-modal" role="dialog" aria-modal="true
 
 const money=n=>(n<0?'−':n>0?'+':'')+'₹'+fmt(Math.abs(n));
 const ALL='__all__';
-const cmp=(a,b)=>{const x=a.o!=null,y=b.o!=null;if(x&&y)return a.o-b.o||(a.id<b.id?-1:1);if(x!==y)return x?1:-1;return b.buyAt.localeCompare(a.buyAt)||(a.id<b.id?-1:1)};
+const dk=e=>e.purAt||e.buyAt||'';
+const cmp=(a,b)=>{const x=a.o!=null,y=b.o!=null;if(x&&y)return a.o-b.o||(a.id<b.id?-1:1);if(x!==y)return x?1:-1;return dk(b).localeCompare(dk(a))||(a.id<b.id?-1:1)};
 const profitOf=e=>e.sell!=null?e.sell-e.buy:null;
 const DEN=['1k','2k','3k','4k','5k'];
 let lastKey='';
@@ -130,11 +131,11 @@ function renderBook(){
   if(fresh)countUp();
   $('.bk-list',book).innerHTML=es.length?es.map((e,i)=>{
     const d=profitOf(e),tax=e.tax||0,codes=(e.d||[]).map((n,j)=>n>0?`${n}×${DEN[j]}`:'').filter(Boolean);
-    const extra=[tax>0?`Tax ₹${fmt(tax)}`:'',codes.length?codes.join(' · '):''].filter(Boolean).join(' · ');
+    const extra=[e.plat?esc(e.plat):'',tax>0?`Tax ₹${fmt(tax)}`:'',codes.length?codes.join(' · '):''].filter(Boolean).join(' · ');
     return `<article class="bk-row${fresh?'':' still'}" data-id="${e.id}" style="animation-delay:${i*45}ms">
       <div class="bk-price">${all?`<span class="bk-who">${esc(e.who)}</span>`:''}${fmt(e.buy)} <span>→</span> ${e.sell!=null?fmt(e.sell):'—'}${extra?`<span class="bk-extra">${extra}</span>`:''}</div>
       <div class="bk-pl ${d>0?'up':d<0?'down':''}">${d==null?'—':money(d)}<i>${d==null?'Holding':d>0?'Profit':d<0?'Loss':'Break-even'}</i></div>
-      <div class="bk-date">${e.purAt?`<div class="bk-pur">Purchased ${dShort(e.purAt)}${relDay(e.purAt)}</div>`:''}${dShort(e.buyAt)}${relDay(e.buyAt)} <span>→</span> ${e.sellAt?dShort(e.sellAt)+relDay(e.sellAt):'—'}</div>
+      <div class="bk-date">${e.purAt?`<div class="bk-pur">Purchased ${dShort(e.purAt)}${relDay(e.purAt)}</div>`:''}${e.buyAt||e.sellAt?`${e.buyAt?dShort(e.buyAt)+relDay(e.buyAt):'—'} <span>→</span> ${e.sellAt?dShort(e.sellAt)+relDay(e.sellAt):'—'}`:''}</div>
       <div class="bk-st"><span class="pill s-${e.status.toLowerCase()}">${e.status}</span></div></article>`}).join('')
    :`<div class=\"bk-empty\"><b>No entries${all?'':' for '+esc(active)} yet</b><span>Tap “Add new entry” to record one.</span></div>`;
 }
@@ -240,6 +241,8 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
   <div class="bk-f">
     <label class="bk-lb" for="enWho">Investor</label>
     <input class="bk-in" id="enWho" list="enPeople" placeholder="New or existing investor" autocomplete="off"><datalist id="enPeople"></datalist>
+    <span class="bk-lb">Platform</span>
+    <select class="bk-in" id="enPlat"></select>
     <span class="bk-lb">Date</span>
     <button type="button" class="bk-in bk-pick" data-pick="purAt"></button>
     <div class="bk-two">
@@ -262,29 +265,34 @@ let f;
 const closedStatus=()=>f.status!=='Purchased';
 function syncForm(){
   $('[data-pick="purAt"]',entry).innerHTML=`${ic.cal}<span class="${f.purAt?'':'ph'}">${f.purAt?dFull(f.purAt):'Purchased date'}</span>`;
-  $('[data-pick="buyAt"]',entry).innerHTML=`${ic.cal}<span class="${f.buyAt?'':'ph'}">${f.buyAt?dFull(f.buyAt):'Date codes sent'}</span>`;
-  $('[data-pick="sellAt"]',entry).innerHTML=`${ic.cal}<span class="${f.sellAt?'':'ph'}">${f.sellAt?dFull(f.sellAt):'Received date'}</span>`;
-  $('[data-pick="sellAt"]',entry).disabled=!closedStatus();
+  $('[data-pick="buyAt"]',entry).innerHTML=`${ic.cal}<span class="${f.buyAt?'':'ph'}">${f.buyAt?dFull(f.buyAt):'Date codes sent (optional)'}</span>`;
+  $('[data-pick="sellAt"]',entry).innerHTML=`${ic.cal}<span class="${f.sellAt?'':'ph'}">${f.sellAt?dFull(f.sellAt):(closedStatus()?'Received date':'Received date (optional)')}</span>`;
   $('#enSell',entry).disabled=!closedStatus();$('#enSell',entry).closest('.bk-money').classList.toggle('off',!closedStatus());
   entry.querySelectorAll('[data-s]').forEach(b=>{const on=b.dataset.s===f.status;b.classList.toggle('on',on);b.setAttribute('aria-checked',on)});
 }
 let editing=null;
 function openEntry(ent){
   editing=ent||null;
-  f=ent?{who:ent.who,purAt:ent.purAt||'',buyAt:ent.buyAt,sellAt:ent.sellAt||'',status:ent.status}:{who:active===ALL?'':active,purAt:nowIso(),buyAt:nowIso(),sellAt:'',status:'Purchased'};
+  f=ent?{who:ent.who,purAt:ent.purAt||'',buyAt:ent.buyAt||'',sellAt:ent.sellAt||'',status:ent.status}:{who:active===ALL?'':active,purAt:'',buyAt:'',sellAt:'',status:'Purchased'};
   $('#enT',entry).textContent=ent?'Edit entry':'New entry';
   $('[data-a="save"]',entry).textContent=ent?'Save':'Add';
   $('#enWho',entry).value=f.who;$('#enBuy',entry).value=ent?ent.buy:'';$('#enSell',entry).value=ent&&ent.sell!=null?ent.sell:'';
   $('#enTax',entry).value=ent&&ent.tax?ent.tax:'';
   DEN.forEach((n,i)=>{$('#enD'+i,entry).value=ent&&ent.d&&ent.d[i]?ent.d[i]:''});
   $('#enPeople',entry).innerHTML=store.people.map(p=>`<option value="${esc(p)}">`).join('');
+  const names=typeof PLATFORMS!=='undefined'?PLATFORMS.map(p=>p.name):[];
+  if(ent&&ent.plat&&!names.includes(ent.plat))names.push(ent.plat);
+  const ps=$('#enPlat',entry);
+  ps.innerHTML='<option value="">Select platform (optional)</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  ps.value=ent&&ent.plat?ent.plat:'';ps.classList.toggle('empty',!ps.value);
   $('.bk-err',entry).hidden=true;syncForm();open(entry);
 }
+entry.addEventListener('change',e=>{if(e.target.id==='enPlat')e.target.classList.toggle('empty',!e.target.value)});
 entry.addEventListener('click',e=>{
   const p=e.target.closest('[data-pick]');
-  if(p&&!p.disabled){const k=p.dataset.pick;openCal(f[k]||nowIso(),k!=='buyAt',v=>{f[k]=v;syncForm()});return}
+  if(p&&!p.disabled){const k=p.dataset.pick;openCal(f[k]||nowIso(),k!=='purAt',v=>{f[k]=v;if(k==='sellAt'&&v&&f.status==='Purchased')f.status='Sold';syncForm()});return}
   const s=e.target.closest('[data-s]');
-  if(s){f.status=s.dataset.s;if(closedStatus()&&!f.sellAt)f.sellAt=nowIso();syncForm();return}
+  if(s){f.status=s.dataset.s;syncForm();return}
   if(e.target.closest('[data-a="save"]'))saveEntry();
 });
 function saveEntry(){
@@ -293,18 +301,23 @@ function saveEntry(){
   const buy=parseFloat($('#enBuy',entry).value),sell=parseFloat($('#enSell',entry).value);
   if(!who)return err('Enter the investor’s name.');
   if(!(buy>0))return err('Enter the invested amount.');
+  if(!f.purAt)return err('Pick the purchased date.');
   if(closedStatus()){
-    if(!(sell>=0))return err('Enter the returning amount.');
     if(!f.sellAt)return err('Pick the received date.');
-    if(f.sellAt<f.buyAt)return err('Received date can’t be before the date codes were sent.');
+    if(!(sell>=0))return err('Enter the returning amount.');
   }
-  if(f.purAt&&f.purAt.slice(0,10)>f.buyAt.slice(0,10))return err('Codes can’t be sent before they were purchased.');
+  const d10=v=>String(v).slice(0,10);
+  if(f.buyAt&&d10(f.buyAt)<d10(f.purAt))return err('Codes can’t be sent before they were purchased.');
+  if(closedStatus()){
+    if(d10(f.sellAt)<d10(f.purAt))return err('Received date can’t be before the purchased date.');
+    if(f.buyAt&&d10(f.sellAt)<d10(f.buyAt))return err('Received date can’t be before the date codes were sent.');
+  }
   const tax=parseFloat($('#enTax',entry).value)||0;
   if(tax<0)return err('Taxes can’t be negative.');
   const d=DEN.map((n,i)=>Math.max(0,parseInt($('#enD'+i,entry).value,10)||0));
   const known=store.people.find(p=>p.toLowerCase()===who.toLowerCase());
   if(known)who=known;else store.people.push(who);
-  const o={who,purAt:f.purAt||null,buyAt:f.buyAt,sellAt:closedStatus()?f.sellAt:null,buy,sell:closedStatus()?sell:null,tax,d,status:f.status};
+  const o={who,plat:$('#enPlat',entry).value||null,purAt:f.purAt,buyAt:f.buyAt||null,sellAt:closedStatus()?f.sellAt:null,buy,sell:closedStatus()?sell:null,tax,d,status:f.status};
   editing?Object.assign(editing,o):store.entries.push({id:uid(),...o});
   save();if(active!==ALL)active=who;renderBook();close(entry);
 }
