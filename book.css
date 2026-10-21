@@ -22,7 +22,7 @@
 .pill{font-size:.7rem;font-weight:650;padding:4px 10px;border-radius:99px}
 .s-purchased{color:#e2b857;background:rgba(226,184,87,.12)}
 .s-sold{color:var(--acc);background:var(--acc-soft)}
-.s-earned{color:#04110a;background:var(--acc)}
+.s-completed,.s-earned{color:#04110a;background:var(--acc)}
 .bk-del{display:grid;place-items:center;min-width:30px;height:30px;padding:0 6px;border-radius:9px;border:1px solid transparent;background:none;color:var(--mut);font:inherit;font-size:.72rem;font-weight:600;cursor:pointer;transition:color .2s,background .2s}
 .bk-del svg{width:16px;height:16px}
 .bk-del:hover{color:var(--red);background:rgba(239,106,106,.1)}
@@ -175,3 +175,15 @@ select.bk-in option{background:var(--surface);color:var(--ink)}
 .logo.bk-lg img{padding:3px}
 .bk-lg.bk-no{display:grid;place-items:center;width:24px;height:24px;color:var(--mut)}
 .bk-lg.bk-no svg{width:16px;height:16px}
+
+/* balance line: capital / profit out / available */
+.bk-bal{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 2px 12px;white-space:nowrap}
+.bk-bal div{display:grid;gap:2px;text-align:center}
+.bk-bal div:first-child{text-align:left}
+.bk-bal div:last-child{text-align:right}
+.bk-bal small{font-size:.68rem;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--mut)}
+.bk-bal b{font-size:.95rem}
+.bk-bal b.up{color:var(--acc)}
+/* rounded buttons in the delete confirmation window */
+.bk-cfm .bk-ghost,.bk-cfm .bk-danger{height:48px;width:100%;border-radius:999px;font:inherit;font-weight:700;padding:0 18px}
+.bk-cfm .bk-danger{border:1px solid transparent}

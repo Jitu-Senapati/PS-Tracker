@@ -24,7 +24,7 @@ const ic={
 };
 
 /* ---------- data ---------- */
-function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&Array.isArray(s.people)&&Array.isArray(s.entries)){s.capital=s.capital||{};return s}}catch(e){}return {people:['Chinu','Jitu','Goat'],capital:{},entries:[]}}
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&Array.isArray(s.people)&&Array.isArray(s.entries)){s.capital=s.capital||{};fixStatus(s);return s}}catch(e){}return {people:['Chinu','Jitu','Goat'],capital:{},entries:[]}}
 let store=load();
 /* ---------- shared sync (server keeps the real copy; this device keeps a cache) ---------- */
 const KEYSTORE='pst.book.key';
@@ -41,11 +41,13 @@ let baseNote='';
 function setNote(t){const p=document.querySelector('#bkT')&&document.querySelector('#bkT').nextElementSibling;if(!p)return;if(!baseNote)baseNote=p.textContent;p.textContent=t?baseNote+' \u00b7 '+t:baseNote}
 const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}};
 const sig=o=>JSON.stringify([o.people.map(p=>[p,Number((o.capital||{})[p])||0]),[...o.entries].sort((a,b)=>a.id<b.id?-1:1)]);
+const fixStatus=o=>{let n=0;o.entries.forEach(e=>{if(e.status==='Earned'){e.status='Completed';n++}});return n};
 async function pull(){
   if(pushing||G||(typeof hold!=='undefined'&&!hold.hidden)||(typeof entry!=='undefined'&&entry&&!entry.hidden))return;
-  try{const d=await api('GET',''),next={people:d.people,capital:d.capital||{},entries:d.entries};
+  try{const d=await api('GET',''),next={people:d.people,capital:d.capital||{},entries:d.entries},raw=JSON.stringify(next),fixed=fixStatus(next);
     if(sig(next)!==sig(store)){store=next;saveLocal();renderBook()}
-    synced=JSON.stringify(store);setNote('shared')}
+    synced=fixed?raw:JSON.stringify(store);setNote('shared');
+    if(fixed)push()}
   catch(e){setNote(e.message==='auth'?'wrong passcode - reopen the book':'offline - showing last saved copy')}
 }
 async function push(){
@@ -125,9 +127,12 @@ function renderBook(){
     `<button class="bk-tab bk-plus" data-a="newuser" aria-label="Add user" title="Add user">${ic.plus}</button>`;
   const es=store.entries.filter(e=>all||e.who===active).sort(cmp);
   const closed=es.filter(e=>e.sell!=null);
-  const invested=es.reduce((s,e)=>s+e.buy,0),returned=closed.reduce((s,e)=>s+e.sell,0),net=closed.reduce((s,e)=>s+profitOf(e),0);
-  const cap=all?store.people.reduce((n,p)=>n+(Number((store.capital||{})[p])||0),0):Number((store.capital||{})[active])||0,avail=cap-invested+returned;
-  $('.bk-bal',book).innerHTML=`<span>Invested <b>₹${fmt(invested)}</b></span><span title="Total capital − invested + returned">Available <b class="${cap>0&&avail<0?'down':''}">${cap>0?(avail<0?'−':'')+'₹'+fmt(Math.abs(avail)):'—'}</b></span>`;
+  const invested=es.reduce((s,e)=>s+(e.status!=='Completed'?e.buy:0),0),returned=closed.reduce((s,e)=>s+e.sell,0),net=closed.reduce((s,e)=>s+profitOf(e),0);
+  const cap=all?store.people.reduce((n,p)=>n+(Number((store.capital||{})[p])||0),0):Number((store.capital||{})[active])||0,avail=cap-invested,
+    pout=es.filter(e=>e.status==='Completed'&&e.sell!=null).reduce((n,e)=>n+profitOf(e),0);
+  $('.bk-bal',book).innerHTML=`<div><small>Capital</small><b>${cap>0?'₹'+fmt(cap):'—'}</b></div>
+    <div title="Profit of completed entries"><small>Profit out</small><b class="${pout>0?'up':pout<0?'down':''}">${money(pout)}</b></div>
+    <div title="Capital − invested (purchased + sold)"><small>Available</small><b class="${cap>0&&avail<0?'down':''}">${cap>0?(avail<0?'−':'')+'₹'+fmt(Math.abs(avail)):'—'}</b></div>`;
   const key=active+'|'+invested+'|'+returned+'|'+net+'|'+es.length;
   const fresh=key!==lastKey;lastKey=key;
   $('.bk-sum',book).innerHTML=`<div class=\"bk-stat\"><small>Invested</small><b data-v=\"${invested}\" data-k=\"rs\">₹${fmt(invested)}</b></div>
@@ -336,7 +341,7 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
     <span class="bk-lb">Codes sent</span>
     <div class="bk-codes">${DEN.map((n,i)=>`<label><small>${n}</small><input class="bk-in" id="enD${i}" inputmode="numeric" placeholder="0"></label>`).join('')}</div>
     <span class="bk-lb">Status</span>
-    <div class="bk-seg" role="radiogroup">${['Purchased','Sold','Earned'].map(s=>`<button type="button" role="radio" data-s="${s}" data-ripple>${s}</button>`).join('')}</div>
+    <div class="bk-seg" role="radiogroup">${['Purchased','Sold','Completed'].map(s=>`<button type="button" role="radio" data-s="${s}" data-ripple>${s}</button>`).join('')}</div>
     <p class="bk-err" role="alert" hidden></p>
   </div>
   <div class="bk-two bk-act"><button class="btn bk-ghost" data-ripple data-x>Cancel</button><button class="btn bk-primary" data-ripple data-a="save">Add</button></div>
