@@ -8,10 +8,13 @@ export class BookDO extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
+    // Seed the starter names only the very first time the people table is created,
+    // so deleting everyone never brings them back.
+    const fresh = this.sql.exec("SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'table' AND name = 'people'").one().c === 0;
     this.sql.exec("CREATE TABLE IF NOT EXISTS entries (id TEXT PRIMARY KEY, data TEXT NOT NULL)");
     this.sql.exec("CREATE TABLE IF NOT EXISTS people (name TEXT PRIMARY KEY, pos INTEGER)");
-    const n = this.sql.exec("SELECT COUNT(*) AS c FROM people").one().c;
-    if (n === 0) ["Chinu", "Jitu", "Goat"].forEach((p, i) => this.sql.exec("INSERT OR IGNORE INTO people VALUES (?, ?)", p, i));
+    try { this.sql.exec("ALTER TABLE people ADD COLUMN capital REAL NOT NULL DEFAULT 0"); } catch (e) { /* already added */ }
+    if (fresh) ["Chinu", "Jitu", "Goat"].forEach((p, i) => this.sql.exec("INSERT OR IGNORE INTO people (name, pos) VALUES (?, ?)", p, i));
   }
 
   async fetch(request) {
@@ -19,9 +22,11 @@ export class BookDO extends DurableObject {
     const m = request.method, sub = parts[2];
 
     if (m === "GET" && !sub) {
-      const people = this.sql.exec("SELECT name FROM people ORDER BY pos, name").toArray().map(r => r.name);
+      const rows = this.sql.exec("SELECT name, capital FROM people ORDER BY pos, name").toArray();
+      const people = rows.map(r => r.name);
+      const capital = Object.fromEntries(rows.map(r => [r.name, r.capital || 0]));
       const entries = this.sql.exec("SELECT data FROM entries").toArray().map(r => JSON.parse(r.data));
-      return J({ people, entries });
+      return J({ people, capital, entries });
     }
     if (m === "PUT" && sub === "entry") {
       const e = await request.json().catch(() => null);
@@ -41,7 +46,24 @@ export class BookDO extends DurableObject {
       const name = b && typeof b.name === "string" ? b.name.trim() : "";
       if (!name || name.length > 60) return J({ error: "bad name" }, 400);
       const pos = this.sql.exec("SELECT COALESCE(MAX(pos), -1) + 1 AS p FROM people").one().p;
-      this.sql.exec("INSERT OR IGNORE INTO people VALUES (?, ?)", name, pos);
+      this.sql.exec("INSERT OR IGNORE INTO people (name, pos) VALUES (?, ?)", name, pos);
+      return J({ ok: true });
+    }
+    // Replace the whole list of investors: order, names and total capital.
+    if (m === "PUT" && sub === "people") {
+      const b = await request.json().catch(() => null);
+      const list = b && Array.isArray(b.people) ? b.people : null;
+      if (!list || list.length > 50) return J({ error: "bad list" }, 400);
+      const seen = new Set(), clean = [];
+      for (const p of list) {
+        const name = p && typeof p.name === "string" ? p.name.trim() : "";
+        const cap = Number(p && p.capital);
+        if (!name || name.length > 60 || seen.has(name.toLowerCase())) return J({ error: "bad list" }, 400);
+        seen.add(name.toLowerCase());
+        clean.push([name, Number.isFinite(cap) && cap >= 0 ? cap : 0]);
+      }
+      this.sql.exec("DELETE FROM people");
+      clean.forEach(([name, cap], i) => this.sql.exec("INSERT INTO people (name, pos, capital) VALUES (?, ?, ?)", name, i, cap));
       return J({ ok: true });
     }
     return J({ error: "not found" }, 404);

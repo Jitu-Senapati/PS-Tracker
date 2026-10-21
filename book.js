@@ -16,6 +16,7 @@ const ic={
   l:svg('<path d="M15 5l-7 7 7 7"/>'),r:svg('<path d="M9 5l7 7-7 7"/>'),
   dn:svg('<path d="M6 9l6 6 6-6"/>'),
   cal:svg('<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/>'),
+  plus:svg('<path d="M12 5v14M5 12h14"/>'),
   edit:svg('<path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/>'),
   trash:svg('<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/>'),
   book:svg('<path d="M5 4.5A1.5 1.5 0 016.5 3H19v15H6.5A1.5 1.5 0 005 19.5v-15zM5 19.5A1.5 1.5 0 006.5 21H19v-3"/>'),
@@ -23,7 +24,7 @@ const ic={
 };
 
 /* ---------- data ---------- */
-function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&Array.isArray(s.people)&&Array.isArray(s.entries))return s}catch(e){}return {people:['Chinu','Jitu','Goat'],entries:[]}}
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&Array.isArray(s.people)&&Array.isArray(s.entries)){s.capital=s.capital||{};return s}}catch(e){}return {people:['Chinu','Jitu','Goat'],capital:{},entries:[]}}
 let store=load();
 /* ---------- shared sync (server keeps the real copy; this device keeps a cache) ---------- */
 const KEYSTORE='pst.book.key';
@@ -39,10 +40,10 @@ async function api(method,path,body){
 let baseNote='';
 function setNote(t){const p=document.querySelector('#bkT')&&document.querySelector('#bkT').nextElementSibling;if(!p)return;if(!baseNote)baseNote=p.textContent;p.textContent=t?baseNote+' \u00b7 '+t:baseNote}
 const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}};
-const sig=o=>JSON.stringify([o.people,[...o.entries].sort((a,b)=>a.id<b.id?-1:1)]);
+const sig=o=>JSON.stringify([o.people.map(p=>[p,Number((o.capital||{})[p])||0]),[...o.entries].sort((a,b)=>a.id<b.id?-1:1)]);
 async function pull(){
   if(pushing||G||(typeof hold!=='undefined'&&!hold.hidden)||(typeof entry!=='undefined'&&entry&&!entry.hidden))return;
-  try{const d=await api('GET',''),next={people:d.people,entries:d.entries};
+  try{const d=await api('GET',''),next={people:d.people,capital:d.capital||{},entries:d.entries};
     if(sig(next)!==sig(store)){store=next;saveLocal();renderBook()}
     synced=JSON.stringify(store);setNote('shared')}
   catch(e){setNote(e.message==='auth'?'wrong passcode - reopen the book':'offline - showing last saved copy')}
@@ -51,7 +52,8 @@ async function push(){
   const prev=JSON.parse(synced),pe=new Map(prev.entries.map(e=>[e.id,JSON.stringify(e)])),ops=[];
   for(const e of store.entries){if(pe.get(e.id)!==JSON.stringify(e))ops.push(['PUT','/entry',e]);pe.delete(e.id)}
   for(const id of pe.keys())ops.push(['DELETE','/entry/'+encodeURIComponent(id)]);
-  for(const p of store.people)if(!prev.people.includes(p))ops.push(['POST','/people',{name:p}]);
+  const roster=o=>JSON.stringify(o.people.map(p=>[p,Number((o.capital||{})[p])||0]));
+  if(roster(store)!==roster(prev))ops.unshift(['PUT','/people',{people:store.people.map(p=>({name:p,capital:Number((store.capital||{})[p])||0}))}]);
   if(!ops.length)return;
   pushing++;
   try{for(const [m,p,b] of ops)await api(m,p,b);synced=JSON.stringify(store);setNote('shared')}
@@ -59,7 +61,7 @@ async function push(){
   finally{pushing--}
 }
 const save=()=>{saveLocal();push()};
-let active=store.people[0];
+let active=store.people[0]||'__all__';
 let G=null; // press / drag gesture on a card
 
 /* ---------- date helpers ---------- */
@@ -116,10 +118,11 @@ function countUp(){
   });
 }
 function renderBook(){
+  if(active!==ALL&&!store.people.includes(active))active=store.people[0]||ALL;
   const all=active===ALL;
-  if(!all&&!store.people.includes(active))active=store.people[0];
-  $('.bk-tabs',book).innerHTML=store.people.map(p=>`<button class=\"bk-tab ${p===active?'on':''}\" role=\"tab\" aria-selected=\"${p===active}\" data-p=\"${esc(p)}\">${esc(p)}</button>`).join('')+
-    `<button class=\"bk-tab ${all?'on':''}\" role=\"tab\" aria-selected=\"${all}\" data-p=\"${ALL}\">All</button>`;
+  $('.bk-tabs',book).innerHTML=store.people.map(p=>`<button class="bk-tab ${p===active?'on':''}" role="tab" aria-selected="${p===active}" data-p="${esc(p)}">${esc(p)}</button>`).join('')+
+    `<button class="bk-tab ${all?'on':''}" role="tab" aria-selected="${all}" data-p="${ALL}">All</button>`+
+    `<button class="bk-tab bk-plus" data-a="newuser" aria-label="Add user" title="Add user">${ic.plus}</button>`;
   const es=store.entries.filter(e=>all||e.who===active).sort(cmp);
   const closed=es.filter(e=>e.sell!=null);
   const invested=es.reduce((s,e)=>s+e.buy,0),returned=closed.reduce((s,e)=>s+e.sell,0),net=closed.reduce((s,e)=>s+profitOf(e),0);
@@ -141,33 +144,42 @@ function renderBook(){
 }
 book.addEventListener('click',e=>{
   const t=e.target.closest('[data-p]');if(t){active=t.dataset.p;renderBook();return}
+  if(e.target.closest('[data-a="newuser"]')){openUser();return}
   if(e.target.closest('[data-a="add"]'))openEntry();
 });
 
 /* ---------- press & hold a card: Edit / Delete over a blurred page; keep holding and drag to reorder ---------- */
-const hold=mount(`<div class="bk-hc"></div><div class="bk-ha"><button type="button" class="bk-hb" data-h="edit">${ic.edit}<span>Edit</span></button><button type="button" class="bk-hb del" data-h="del">${ic.trash}<span>Delete</span></button></div>`,'bk-hold');
-const holdBox=$('.bk-hc',hold),holdAct=$('.bk-ha',hold),delBtn=$('[data-h="del"]',hold),list=$('.bk-list',book);
-let heldId=null,armTimer=0,suppress=0;
+const hold=mount(`<div class="bk-hc"></div><div class="bk-ha"><button type="button" class="bk-hb" data-h="edit">${ic.edit}<span>Edit</span></button><button type="button" class="bk-hb del" data-h="del">${ic.trash}<span>Delete</span></button><p class="bk-hn"></p></div>`,'bk-hold');
+const holdBox=$('.bk-hc',hold),holdAct=$('.bk-ha',hold),delBtn=$('[data-h="del"]',hold),holdHint=$('.bk-hn',hold),list=$('.bk-list',book),tabsEl=$('.bk-tabs',book);
+let heldId=null,heldKind='row',armTimer=0,suppress=0;
 const delLabel=t=>{delBtn.innerHTML=ic.trash+'<span>'+t+'</span>'};
 function closeNow(o){if(o.hidden)return;o.classList.remove('closing');o.hidden=true;const i=stack.indexOf(o);if(i>-1)stack.splice(i,1);if(!stack.length)document.body.style.overflow=''}
-function showHold(row){
-  const r=row.getBoundingClientRect(),c=row.cloneNode(true),bh=52;
-  heldId=row.dataset.id;
-  c.classList.remove('still');c.classList.add('bk-lift');c.removeAttribute('style');
+function showHold(el,kind){
+  const r=el.getBoundingClientRect(),c=el.cloneNode(true),bh=52,user=kind==='tab';
+  heldKind=kind;heldId=user?el.dataset.p:el.dataset.id;
+  c.classList.remove('still','on','shift','drag');c.classList.add('bk-lift');c.removeAttribute('style');
   Object.assign(c.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px'});
   holdBox.replaceChildren(c);
+  const w=user?Math.max(r.width,240):r.width,left=user?Math.min(Math.max(12,r.left),innerWidth-12-w):r.left;
   const below=r.bottom+10+bh<=innerHeight-12;
-  Object.assign(holdAct.style,{left:r.left+'px',width:r.width+'px',top:(below?r.bottom+10:Math.max(12,r.top-10-bh))+'px'});
-  clearTimeout(armTimer);delete delBtn.dataset.armed;delBtn.classList.remove('arm');delLabel('Delete');
+  Object.assign(holdAct.style,{left:left+'px',width:w+'px',top:(below?r.bottom+10:Math.max(12,r.top-10-bh))+'px'});
+  clearTimeout(armTimer);delete delBtn.dataset.armed;delBtn.classList.remove('arm');delLabel('Delete');holdHint.textContent='';
   open(hold);
 }
 hold.addEventListener('click',e=>{
   const b=e.target.closest('[data-h]');if(!b)return;
-  const ent=store.entries.find(x=>x.id===heldId);if(!ent){close(hold);return}
-  if(b.dataset.h==='edit'){close(hold);openEntry(ent);return}
-  if(b.dataset.armed){store.entries=store.entries.filter(x=>x.id!==heldId);save();renderBook();close(hold)}
-  else{b.dataset.armed=1;b.classList.add('arm');delLabel('Delete?');clearTimeout(armTimer);
-    armTimer=setTimeout(()=>{delete b.dataset.armed;b.classList.remove('arm');delLabel('Delete')},2500)}
+  const user=heldKind==='tab',ent=user?null:store.entries.find(x=>x.id===heldId);
+  if(!user&&!ent){close(hold);return}
+  if(b.dataset.h==='edit'){close(hold);user?openUser(heldId):openEntry(ent);return}
+  if(b.dataset.armed){
+    if(user){const n=heldId;store.entries=store.entries.filter(x=>x.who!==n);store.people=store.people.filter(p=>p!==n);if(store.capital)delete store.capital[n];if(active===n)active=store.people[0]||ALL}
+    else store.entries=store.entries.filter(x=>x.id!==heldId);
+    save();renderBook();close(hold);
+  }else{
+    b.dataset.armed=1;b.classList.add('arm');delLabel('Delete?');
+    if(user){const k=store.entries.filter(x=>x.who===heldId).length;holdHint.textContent=k?`Also removes ${k} ${k===1?'entry':'entries'}.`:''}
+    clearTimeout(armTimer);armTimer=setTimeout(()=>{delete b.dataset.armed;b.classList.remove('arm');delLabel('Delete');holdHint.textContent=''},2500)
+  }
 });
 
 function applyOrder(ids){
@@ -177,35 +189,37 @@ function applyOrder(ids){
   all.forEach((e,i)=>{if(e.o!==i)e.o=i});
   save();renderBook();
 }
+function applyPeople(names){store.people=names;save();renderBook()}
 function gClean(){
   if(!G)return;clearTimeout(G.timer);cancelAnimationFrame(G.raf);
   removeEventListener('pointermove',gMove);removeEventListener('pointerup',gEnd);removeEventListener('pointercancel',gEnd);G=null;
 }
+const gScroll=()=>G.kind==='tab'?G.box.scrollLeft:G.box.scrollTop;
 function startDrag(){
   closeNow(hold);
-  const rows=[...list.querySelectorAll('.bk-row')];
-  G.rows=rows;G.i=rows.indexOf(G.row);G.t=G.i;G.s0=list.scrollTop;
-  G.pos=rows.map(r=>({t:r.offsetTop,h:r.offsetHeight}));
-  G.gap=parseFloat(getComputedStyle(G.row).marginBottom)||0;
-  G.state='drag';G.row.classList.add('drag');rows.forEach(r=>{if(r!==G.row)r.classList.add('shift')});
-  list.classList.add('dragging');loop();dragTo();
+  const tab=G.kind==='tab',box=tab?tabsEl:list,items=[...box.querySelectorAll(tab?`.bk-tab[data-p]:not([data-p="${ALL}"])`:'.bk-row')];
+  G.box=box;G.items=items;G.i=items.indexOf(G.el);G.t=G.i;G.s0=gScroll();
+  G.pos=items.map(r=>tab?{t:r.offsetLeft,h:r.offsetWidth}:{t:r.offsetTop,h:r.offsetHeight});
+  G.gap=tab?(parseFloat(getComputedStyle(box).columnGap)||0):(parseFloat(getComputedStyle(G.el).marginBottom)||0);
+  G.state='drag';G.el.classList.add('drag');items.forEach(r=>{if(r!==G.el)r.classList.add('shift')});
+  box.classList.add('dragging');loop();dragTo();
 }
 function dragTo(){
-  const {rows,i,pos}=G,dy=G.cy-G.y+(list.scrollTop-G.s0),h=pos[i].h+G.gap,c=pos[i].t+pos[i].h/2+dy;
-  G.row.style.transform=`translateY(${dy}px) scale(1.02)`;
+  const tab=G.kind==='tab',{items,i,pos}=G,d=(tab?G.cx-G.x:G.cy-G.y)+(gScroll()-G.s0),h=pos[i].h+G.gap,c=pos[i].t+pos[i].h/2+d;
+  G.el.style.transform=tab?`translateX(${d}px) scale(1.05)`:`translateY(${d}px) scale(1.02)`;
   let t=0;pos.forEach((p,j)=>{if(j!==i&&p.t+p.h/2<c)t++});
   G.t=t;
-  rows.forEach((r,j)=>{if(j!==i)r.style.transform=(i<j&&j<=t)?`translateY(${-h}px)`:(t<=j&&j<i)?`translateY(${h}px)`:''});
+  items.forEach((r,j)=>{if(j===i)return;const m=(i<j&&j<=t)?-h:(t<=j&&j<i)?h:0;r.style.transform=m?(tab?`translateX(${m}px)`:`translateY(${m}px)`):''});
 }
 function loop(){
   if(!G||G.state!=='drag')return;
-  const r=list.getBoundingClientRect(),z=56,y=G.cy;let v=0;
-  if(y<r.top+z)v=-Math.min(14,(r.top+z-y)/4);else if(y>r.bottom-z)v=Math.min(14,(y-(r.bottom-z))/4);
-  if(v){list.scrollTop+=v;dragTo()}
+  const tab=G.kind==='tab',r=G.box.getBoundingClientRect(),z=56,p=tab?G.cx:G.cy,lo=tab?r.left:r.top,hi=tab?r.right:r.bottom;let v=0;
+  if(p<lo+z)v=-Math.min(14,(lo+z-p)/4);else if(p>hi-z)v=Math.min(14,(p-(hi-z))/4);
+  if(v){if(tab)G.box.scrollLeft+=v;else G.box.scrollTop+=v;dragTo()}
   G.raf=requestAnimationFrame(loop);
 }
 function gMove(e){
-  if(!G)return;G.cy=e.clientY;
+  if(!G)return;G.cx=e.clientX;G.cy=e.clientY;
   const dist=Math.hypot(e.clientX-G.x,e.clientY-G.y);
   if(G.state==='wait'){if(dist>10)gClean();return}
   if(G.state==='held'){if(dist>14)startDrag();return}
@@ -214,25 +228,75 @@ function gMove(e){
 function gEnd(){
   if(!G)return;
   if(G.state==='drag'){
-    const {rows,i,t}=G;
-    rows.forEach(r=>{r.style.transform='';r.classList.remove('drag','shift')});list.classList.remove('dragging');
-    const ids=rows.map(r=>r.dataset.id);
+    const {items,i,t,box,kind}=G;
+    items.forEach(r=>{r.style.transform='';r.classList.remove('drag','shift')});box.classList.remove('dragging');
+    const ids=items.map(r=>kind==='tab'?r.dataset.p:r.dataset.id);
     gClean();
-    if(t!==i){const [m]=ids.splice(i,1);ids.splice(t,0,m);applyOrder(ids)}
+    if(t!==i){const [m]=ids.splice(i,1);ids.splice(t,0,m);kind==='tab'?applyPeople(ids):applyOrder(ids)}
     return;
   }
   gClean();
 }
-list.addEventListener('pointerdown',e=>{
+function gDown(e,el,kind){
   if(e.button>0||G)return;
-  const row=e.target.closest('.bk-row');if(!row)return;
-  G={row,x:e.clientX,y:e.clientY,cy:e.clientY,state:'wait'};
-  G.timer=setTimeout(()=>{if(!G||G.state!=='wait')return;G.state='held';suppress=Date.now()+700;if(navigator.vibrate)navigator.vibrate(12);showHold(row)},420);
+  G={el,kind,x:e.clientX,y:e.clientY,cx:e.clientX,cy:e.clientY,state:'wait'};
+  G.timer=setTimeout(()=>{if(!G||G.state!=='wait')return;G.state='held';suppress=Date.now()+700;if(navigator.vibrate)navigator.vibrate(12);showHold(el,kind)},420);
   addEventListener('pointermove',gMove);addEventListener('pointerup',gEnd);addEventListener('pointercancel',gEnd);
-});
-list.addEventListener('touchmove',e=>{if(G&&G.state!=='wait'&&e.cancelable)e.preventDefault()},{passive:false});
+}
+list.addEventListener('pointerdown',e=>{const el=e.target.closest('.bk-row');if(el)gDown(e,el,'row')});
+tabsEl.addEventListener('pointerdown',e=>{const el=e.target.closest('.bk-tab[data-p]');if(el&&el.dataset.p!==ALL)gDown(e,el,'tab')});
+const noScroll=e=>{if(G&&G.state!=='wait'&&e.cancelable)e.preventDefault()};
+list.addEventListener('touchmove',noScroll,{passive:false});
+tabsEl.addEventListener('touchmove',noScroll,{passive:false});
 list.addEventListener('contextmenu',e=>{if(e.target.closest('.bk-row'))e.preventDefault()});
+tabsEl.addEventListener('contextmenu',e=>{if(e.target.closest('.bk-tab[data-p]'))e.preventDefault()});
 book.addEventListener('click',e=>{if(Date.now()<suppress){e.stopPropagation();e.preventDefault()}},true);
+
+/* ---------- New / edit user ---------- */
+const userM=mount(`<section class="modal bk-form" role="dialog" aria-modal="true" aria-labelledby="usT">
+  <div class="mhead"><div><h2 id="usT">New user</h2><p>Add an investor to the book</p></div>
+    <button class="btn icon sm" data-ripple data-x aria-label="Close">${ic.close}</button></div>
+  <div class="bk-f">
+    <label class="bk-lb" for="usName">Name</label>
+    <input class="bk-in" id="usName" maxlength="40" placeholder="Investor name" autocomplete="off">
+    <label class="bk-lb" for="usCap">Total capital</label>
+    <label class="bk-money"><b>₹</b><input class="bk-in" id="usCap" inputmode="decimal" placeholder="Total capital (optional)"></label>
+    <p class="bk-err" role="alert" hidden></p>
+  </div>
+  <div class="bk-two bk-act"><button class="btn bk-ghost" data-ripple data-x>Cancel</button><button class="btn bk-primary" data-ripple data-a="saveuser">Add</button></div>
+</section>`);
+let editUser=null;
+function openUser(name){
+  editUser=name||null;
+  $('#usT',userM).textContent=name?'Edit user':'New user';
+  $('.mhead p',userM).textContent=name?'Change the name or total capital':'Add an investor to the book';
+  $('[data-a="saveuser"]',userM).textContent=name?'Save':'Add';
+  $('#usName',userM).value=name||'';
+  const c=name?Number((store.capital||{})[name])||0:0;
+  $('#usCap',userM).value=c?c:'';
+  $('.bk-err',userM).hidden=true;
+  open(userM);
+  setTimeout(()=>{if(!userM.hidden)$('#usName',userM).focus()},80);
+}
+function saveUser(){
+  const err=m=>{const el=$('.bk-err',userM);el.textContent=m;el.hidden=false};
+  const name=$('#usName',userM).value.trim(),raw=$('#usCap',userM).value.trim().replace(/,/g,''),cap=raw===''?0:Number(raw);
+  if(!name)return err('Enter the investor’s name.');
+  if(name.toLowerCase()==='all')return err('“All” is the combined tab, pick another name.');
+  if(store.people.some(p=>p!==editUser&&p.toLowerCase()===name.toLowerCase()))return err('That investor already exists.');
+  if(!Number.isFinite(cap)||cap<0)return err('Enter a valid capital amount.');
+  store.capital=store.capital||{};
+  if(editUser&&name!==editUser){
+    store.people=store.people.map(p=>p===editUser?name:p);
+    store.entries.forEach(e=>{if(e.who===editUser)e.who=name});
+    delete store.capital[editUser];
+    if(active===editUser)active=name;
+  }else if(!editUser){store.people.push(name);active=name}
+  store.capital[name]=cap;
+  save();renderBook();close(userM);
+}
+userM.addEventListener('click',e=>{if(e.target.closest('[data-a="saveuser"]'))saveUser()});
+userM.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.tagName==='INPUT'){e.preventDefault();saveUser()}});
 
 /* ---------- New entry ---------- */
 const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true" aria-labelledby="enT">
