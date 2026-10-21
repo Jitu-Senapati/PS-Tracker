@@ -143,5 +143,35 @@ select.bk-in option{background:var(--surface);color:var(--ink)}
 .bk-tabs.dragging{cursor:grabbing}
 .bk-hc .bk-tab{position:fixed;margin:0;color:var(--ink);background:var(--raise);border:1px solid var(--acc);border-radius:12px;box-shadow:0 18px 40px -12px #000;animation:bkLift .22s var(--spring) forwards}
 .bk-hc .bk-tab::after{display:none}
-.bk-hn{grid-column:1/-1;margin:0;text-align:center;font-size:.78rem;color:var(--mut)}
-.bk-hn:empty{display:none}
+
+/* invested + available balance line above the add button */
+.bk-bal{display:flex;justify-content:space-between;gap:12px;margin:0 2px 12px;font-size:.82rem;color:var(--mut);white-space:nowrap}
+.bk-bal b{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums}
+.bk-bal b.down{color:var(--red)}
+
+/* confirmation window */
+.overlay.bk-cf{z-index:45}
+.overlay.bk.bk-cf:not(.bk-cal){place-items:center;padding:16px}
+.overlay.bk.bk-cf:not(.bk-cal) .modal.bk-cfm{width:min(340px,100%);border-radius:22px;padding:22px 20px 20px;text-align:center}
+.bk-cfi{width:48px;height:48px;margin:0 auto 12px;display:grid;place-items:center;border-radius:50%;background:rgba(239,106,106,.14);color:var(--red)}
+.bk-cfi svg{width:22px;height:22px}
+.bk-cfm h2{margin:0 0 6px;font-size:1.1rem}
+.bk-cft{margin:0 0 18px;color:var(--mut);font-size:.88rem;line-height:1.45}
+.bk-cfm .bk-act{margin:0}
+.bk-danger{background:var(--red);color:#1b0707;font-weight:700}
+
+/* platform dropdown with logos */
+.bk-dd{position:relative;min-width:0}
+.bk-ddb{display:flex;align-items:center;gap:8px;width:100%;justify-content:flex-start;text-align:left}
+.bk-ddb>svg{margin-left:auto;width:16px;height:16px;flex:none;color:var(--mut)}
+.bk-ddn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bk-ddm{position:absolute;right:0;top:calc(100% + 6px);z-index:8;width:max(100%,250px);max-height:248px;overflow:auto;padding:6px;background:var(--surface);border:1px solid var(--stroke);border-radius:14px;box-shadow:0 18px 40px -12px #000;animation:rise .18s var(--ease) both}
+.bk-ddm[hidden]{display:none}
+.bk-ddm button{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:10px;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.bk-ddm button:hover{background:var(--raise)}
+.bk-ddm button.on{background:var(--raise);color:var(--acc)}
+.logo.bk-lg{width:24px;height:24px;border-radius:7px;flex:none}
+.logo.bk-lg .badge{font-size:.78rem}
+.logo.bk-lg img{padding:3px}
+.bk-lg.bk-no{display:grid;place-items:center;width:24px;height:24px;color:var(--mut)}
+.bk-lg.bk-no svg{width:16px;height:16px}

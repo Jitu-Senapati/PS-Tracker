@@ -98,7 +98,7 @@ const book=mount(`<section class="modal bk-modal" role="dialog" aria-modal="true
   <div class="bk-tabs" role="tablist"></div>
   <div class="bk-sum"></div>
   <div class="bk-list"></div>
-  <div class="bk-foot"><button class="btn bk-primary" data-ripple data-a="add">+ Add new entry</button></div>
+  <div class="bk-foot"><div class="bk-bal"></div><button class="btn bk-primary" data-ripple data-a="add">+ Add new entry</button></div>
 </section>`);
 
 const money=n=>(n<0?'−':n>0?'+':'')+'₹'+fmt(Math.abs(n));
@@ -126,6 +126,8 @@ function renderBook(){
   const es=store.entries.filter(e=>all||e.who===active).sort(cmp);
   const closed=es.filter(e=>e.sell!=null);
   const invested=es.reduce((s,e)=>s+e.buy,0),returned=closed.reduce((s,e)=>s+e.sell,0),net=closed.reduce((s,e)=>s+profitOf(e),0);
+  const cap=all?store.people.reduce((n,p)=>n+(Number((store.capital||{})[p])||0),0):Number((store.capital||{})[active])||0,avail=cap-invested+returned;
+  $('.bk-bal',book).innerHTML=`<span>Invested <b>₹${fmt(invested)}</b></span><span title="Total capital − invested + returned">Available <b class="${cap>0&&avail<0?'down':''}">${cap>0?(avail<0?'−':'')+'₹'+fmt(Math.abs(avail)):'—'}</b></span>`;
   const key=active+'|'+invested+'|'+returned+'|'+net+'|'+es.length;
   const fresh=key!==lastKey;lastKey=key;
   $('.bk-sum',book).innerHTML=`<div class=\"bk-stat\"><small>Invested</small><b data-v=\"${invested}\" data-k=\"rs\">₹${fmt(invested)}</b></div>
@@ -138,7 +140,7 @@ function renderBook(){
     return `<article class="bk-row${fresh?'':' still'}" data-id="${e.id}" style="animation-delay:${i*45}ms">
       <div class="bk-price">${all?`<span class="bk-who">${esc(e.who)}</span>`:''}${fmt(e.buy)} <span>→</span> ${e.sell!=null?fmt(e.sell):'—'}${extra?`<span class="bk-extra">${extra}</span>`:''}</div>
       <div class="bk-pl ${d>0?'up':d<0?'down':''}">${d==null?'—':money(d)}<i>${d==null?'Holding':d>0?'Profit':d<0?'Loss':'Break-even'}</i></div>
-      <div class="bk-date">${e.purAt?`<div class="bk-pur">Purchased ${dShort(e.purAt)}${relDay(e.purAt)}</div>`:''}${e.buyAt||e.sellAt?`${e.buyAt?dShort(e.buyAt)+relDay(e.buyAt):'—'} <span>→</span> ${e.sellAt?dShort(e.sellAt)+relDay(e.sellAt):'—'}`:''}</div>
+      <div class="bk-date">${e.purAt&&!e.buyAt?`<div class="bk-pur">Purchased ${dShort(e.purAt)}${relDay(e.purAt)}</div>`:''}${e.buyAt||e.sellAt?`${e.buyAt?dShort(e.buyAt)+relDay(e.buyAt):'—'} <span>→</span> ${e.sellAt?dShort(e.sellAt)+relDay(e.sellAt):'—'}`:''}</div>
       <div class="bk-st"><span class="pill s-${e.status.toLowerCase()}">${e.status}</span></div></article>`}).join('')
    :`<div class=\"bk-empty\"><b>No entries${all?'':' for '+esc(active)} yet</b><span>Tap “Add new entry” to record one.</span></div>`;
 }
@@ -149,10 +151,18 @@ book.addEventListener('click',e=>{
 });
 
 /* ---------- press & hold a card: Edit / Delete over a blurred page; keep holding and drag to reorder ---------- */
-const hold=mount(`<div class="bk-hc"></div><div class="bk-ha"><button type="button" class="bk-hb" data-h="edit">${ic.edit}<span>Edit</span></button><button type="button" class="bk-hb del" data-h="del">${ic.trash}<span>Delete</span></button><p class="bk-hn"></p></div>`,'bk-hold');
-const holdBox=$('.bk-hc',hold),holdAct=$('.bk-ha',hold),delBtn=$('[data-h="del"]',hold),holdHint=$('.bk-hn',hold),list=$('.bk-list',book),tabsEl=$('.bk-tabs',book);
-let heldId=null,heldKind='row',armTimer=0,suppress=0;
-const delLabel=t=>{delBtn.innerHTML=ic.trash+'<span>'+t+'</span>'};
+const hold=mount(`<div class="bk-hc"></div><div class="bk-ha"><button type="button" class="bk-hb" data-h="edit">${ic.edit}<span>Edit</span></button><button type="button" class="bk-hb del" data-h="del">${ic.trash}<span>Delete</span></button></div>`,'bk-hold');
+const holdBox=$('.bk-hc',hold),holdAct=$('.bk-ha',hold),list=$('.bk-list',book),tabsEl=$('.bk-tabs',book);
+let heldId=null,heldKind='row',suppress=0;
+/* confirmation window shown before anything is deleted */
+const cfm=mount(`<section class="modal bk-cfm" role="alertdialog" aria-modal="true" aria-labelledby="cfT">
+  <div class="bk-cfi">${ic.trash}</div>
+  <h2 id="cfT">Delete?</h2><p class="bk-cft"></p>
+  <div class="bk-two bk-act"><button class="btn bk-ghost" data-ripple data-x>Cancel</button><button class="btn bk-danger" data-ripple data-a="cfdel">Delete</button></div>
+</section>`,'bk-cf');
+let cfAction=null;
+function askDelete(title,text,fn){$('#cfT',cfm).textContent=title;$('.bk-cft',cfm).textContent=text;cfAction=fn;open(cfm)}
+cfm.addEventListener('click',e=>{if(e.target.closest('[data-a="cfdel"]')){const fn=cfAction;cfAction=null;close(cfm);if(fn)fn()}});
 function closeNow(o){if(o.hidden)return;o.classList.remove('closing');o.hidden=true;const i=stack.indexOf(o);if(i>-1)stack.splice(i,1);if(!stack.length)document.body.style.overflow=''}
 function showHold(el,kind){
   const r=el.getBoundingClientRect(),c=el.cloneNode(true),bh=52,user=kind==='tab';
@@ -163,7 +173,6 @@ function showHold(el,kind){
   const w=user?Math.max(r.width,240):r.width,left=user?Math.min(Math.max(12,r.left),innerWidth-12-w):r.left;
   const below=r.bottom+10+bh<=innerHeight-12;
   Object.assign(holdAct.style,{left:left+'px',width:w+'px',top:(below?r.bottom+10:Math.max(12,r.top-10-bh))+'px'});
-  clearTimeout(armTimer);delete delBtn.dataset.armed;delBtn.classList.remove('arm');delLabel('Delete');holdHint.textContent='';
   open(hold);
 }
 hold.addEventListener('click',e=>{
@@ -171,14 +180,20 @@ hold.addEventListener('click',e=>{
   const user=heldKind==='tab',ent=user?null:store.entries.find(x=>x.id===heldId);
   if(!user&&!ent){close(hold);return}
   if(b.dataset.h==='edit'){close(hold);user?openUser(heldId):openEntry(ent);return}
-  if(b.dataset.armed){
-    if(user){const n=heldId;store.entries=store.entries.filter(x=>x.who!==n);store.people=store.people.filter(p=>p!==n);if(store.capital)delete store.capital[n];if(active===n)active=store.people[0]||ALL}
-    else store.entries=store.entries.filter(x=>x.id!==heldId);
-    save();renderBook();close(hold);
+  const done=()=>{save();renderBook();close(hold)};
+  if(user){
+    const n=heldId,k=store.entries.filter(x=>x.who===n).length;
+    askDelete(`Delete ${n}?`,(k?`This also removes their ${k} ${k===1?'entry':'entries'}. `:'')+'This can’t be undone.',()=>{
+      store.entries=store.entries.filter(x=>x.who!==n);store.people=store.people.filter(p=>p!==n);
+      if(store.capital)delete store.capital[n];
+      if(active===n)active=store.people[0]||ALL;
+      done();
+    });
   }else{
-    b.dataset.armed=1;b.classList.add('arm');delLabel('Delete?');
-    if(user){const k=store.entries.filter(x=>x.who===heldId).length;holdHint.textContent=k?`Also removes ${k} ${k===1?'entry':'entries'}.`:''}
-    clearTimeout(armTimer);armTimer=setTimeout(()=>{delete b.dataset.armed;b.classList.remove('arm');delLabel('Delete');holdHint.textContent=''},2500)
+    const id=heldId;
+    askDelete('Delete this entry?',`${ent.who}: ₹${fmt(ent.buy)}${ent.sell!=null?' → ₹'+fmt(ent.sell):''}${ent.plat?' · '+ent.plat:''}. This can’t be undone.`,()=>{
+      store.entries=store.entries.filter(x=>x.id!==id);done();
+    });
   }
 });
 
@@ -305,8 +320,6 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
   <div class="bk-f">
     <label class="bk-lb" for="enWho">Investor</label>
     <input class="bk-in" id="enWho" list="enPeople" placeholder="New or existing investor" autocomplete="off"><datalist id="enPeople"></datalist>
-    <span class="bk-lb">Platform</span>
-    <select class="bk-in" id="enPlat"></select>
     <span class="bk-lb">Date</span>
     <button type="button" class="bk-in bk-pick" data-pick="purAt"></button>
     <div class="bk-two">
@@ -316,7 +329,10 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
     <div class="bk-two">
       <label class="bk-money"><b>₹</b><input class="bk-in" id="enBuy" inputmode="decimal" placeholder=" "><span class="bk-hint">Invested <small>(inc tax)</small></span></label>
       <label class="bk-money"><b>₹</b><input class="bk-in" id="enSell" inputmode="decimal" placeholder="Returning"></label></div>
-    <label class="bk-money"><b>₹</b><input class="bk-in" id="enTax" inputmode="decimal" placeholder="Taxes (optional)"></label>
+    <div class="bk-two">
+      <label class="bk-money"><b>₹</b><input class="bk-in" id="enTax" inputmode="decimal" placeholder="Taxes (optional)"></label>
+      <div class="bk-dd"><button type="button" class="bk-in bk-pick bk-ddb" id="enPlat" aria-haspopup="listbox" aria-expanded="false"></button>
+        <div class="bk-ddm" role="listbox" hidden></div></div></div>
     <span class="bk-lb">Codes sent</span>
     <div class="bk-codes">${DEN.map((n,i)=>`<label><small>${n}</small><input class="bk-in" id="enD${i}" inputmode="numeric" placeholder="0"></label>`).join('')}</div>
     <span class="bk-lb">Status</span>
@@ -325,11 +341,18 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
   </div>
   <div class="bk-two bk-act"><button class="btn bk-ghost" data-ripple data-x>Cancel</button><button class="btn bk-primary" data-ripple data-a="save">Add</button></div>
 </section>`);
+const platIcon=n=>{
+  const p=(typeof PLATFORMS!=='undefined'&&PLATFORMS.find(x=>x.name===n))||{name:n};
+  try{if(typeof logoOf==='function')return `<span class="logo bk-lg">${logoOf(p)}</span>`}catch(e){}
+  return `<span class="logo bk-lg"><span class="badge" style="background:#2b3a33">${esc((n.trim()[0]||'?').toUpperCase())}</span></span>`;
+};
 let f;
 const closedStatus=()=>f.status!=='Purchased';
 function syncForm(){
+  $('#enPlat',entry).innerHTML=(f.plat?`${platIcon(f.plat)}<span class="bk-ddn">${esc(f.plat)}</span>`:'<span class="bk-ddn ph">Platform</span>')+ic.dn;
+  entry.querySelectorAll('.bk-ddm [data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===(f.plat||'')));
   $('[data-pick="purAt"]',entry).innerHTML=`${ic.cal}<span class="${f.purAt?'':'ph'}">${f.purAt?dFull(f.purAt):'Purchased date'}</span>`;
-  $('[data-pick="buyAt"]',entry).innerHTML=`${ic.cal}<span class="${f.buyAt?'':'ph'}">${f.buyAt?dFull(f.buyAt):'Date codes sent (optional)'}</span>`;
+  $('[data-pick="buyAt"]',entry).innerHTML=`${ic.cal}<span class="${f.buyAt?'':'ph'}">${f.buyAt?dFull(f.buyAt):'Send date (optional)'}</span>`;
   $('[data-pick="sellAt"]',entry).innerHTML=`${ic.cal}<span class="${f.sellAt?'':'ph'}">${f.sellAt?dFull(f.sellAt):(closedStatus()?'Received date':'Received date (optional)')}</span>`;
   $('#enSell',entry).disabled=!closedStatus();$('#enSell',entry).closest('.bk-money').classList.toggle('off',!closedStatus());
   entry.querySelectorAll('[data-s]').forEach(b=>{const on=b.dataset.s===f.status;b.classList.toggle('on',on);b.setAttribute('aria-checked',on)});
@@ -337,7 +360,7 @@ function syncForm(){
 let editing=null;
 function openEntry(ent){
   editing=ent||null;
-  f=ent?{who:ent.who,purAt:ent.purAt||'',buyAt:ent.buyAt||'',sellAt:ent.sellAt||'',status:ent.status}:{who:active===ALL?'':active,purAt:'',buyAt:'',sellAt:'',status:'Purchased'};
+  f=ent?{plat:ent.plat||'',who:ent.who,purAt:ent.purAt||'',buyAt:ent.buyAt||'',sellAt:ent.sellAt||'',status:ent.status}:{plat:'',who:active===ALL?'':active,purAt:'',buyAt:'',sellAt:'',status:'Purchased'};
   $('#enT',entry).textContent=ent?'Edit entry':'New entry';
   $('[data-a="save"]',entry).textContent=ent?'Save':'Add';
   $('#enWho',entry).value=f.who;$('#enBuy',entry).value=ent?ent.buy:'';$('#enSell',entry).value=ent&&ent.sell!=null?ent.sell:'';
@@ -346,12 +369,17 @@ function openEntry(ent){
   $('#enPeople',entry).innerHTML=store.people.map(p=>`<option value="${esc(p)}">`).join('');
   const names=typeof PLATFORMS!=='undefined'?PLATFORMS.map(p=>p.name):[];
   if(ent&&ent.plat&&!names.includes(ent.plat))names.push(ent.plat);
-  const ps=$('#enPlat',entry);
-  ps.innerHTML='<option value="">Select platform (optional)</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
-  ps.value=ent&&ent.plat?ent.plat:'';ps.classList.toggle('empty',!ps.value);
+  const menu=$('.bk-ddm',entry);
+  menu.innerHTML=`<button type="button" role="option" data-v=""><span class="bk-lg bk-no">${ic.close}</span><span>No platform</span></button>`+names.map(n=>`<button type="button" role="option" data-v="${esc(n)}">${platIcon(n)}<span>${esc(n)}</span></button>`).join('');
+  menu.hidden=true;$('#enPlat',entry).setAttribute('aria-expanded','false');
   $('.bk-err',entry).hidden=true;syncForm();open(entry);
 }
-entry.addEventListener('change',e=>{if(e.target.id==='enPlat')e.target.classList.toggle('empty',!e.target.value)});
+entry.addEventListener('click',e=>{
+  const menu=$('.bk-ddm',entry),btn=e.target.closest('#enPlat'),opt=e.target.closest('.bk-ddm [data-v]');
+  if(btn){const o=menu.hidden;menu.hidden=!o;btn.setAttribute('aria-expanded',String(o));if(o&&menu.scrollIntoView)menu.scrollIntoView({block:'nearest'});return}
+  if(opt){f.plat=opt.dataset.v;menu.hidden=true;$('#enPlat',entry).setAttribute('aria-expanded','false');syncForm();return}
+  if(!menu.hidden&&!e.target.closest('.bk-dd')){menu.hidden=true;$('#enPlat',entry).setAttribute('aria-expanded','false')}
+});
 entry.addEventListener('click',e=>{
   const p=e.target.closest('[data-pick]');
   if(p&&!p.disabled){const k=p.dataset.pick;openCal(f[k]||nowIso(),k!=='purAt',v=>{f[k]=v;if(k==='sellAt'&&v&&f.status==='Purchased')f.status='Sold';syncForm()});return}
@@ -381,7 +409,7 @@ function saveEntry(){
   const d=DEN.map((n,i)=>Math.max(0,parseInt($('#enD'+i,entry).value,10)||0));
   const known=store.people.find(p=>p.toLowerCase()===who.toLowerCase());
   if(known)who=known;else store.people.push(who);
-  const o={who,plat:$('#enPlat',entry).value||null,purAt:f.purAt,buyAt:f.buyAt||null,sellAt:closedStatus()?f.sellAt:null,buy,sell:closedStatus()?sell:null,tax,d,status:f.status};
+  const o={who,plat:f.plat||null,purAt:f.purAt,buyAt:f.buyAt||null,sellAt:closedStatus()?f.sellAt:null,buy,sell:closedStatus()?sell:null,tax,d,status:f.status};
   editing?Object.assign(editing,o):store.entries.push({id:uid(),...o});
   save();if(active!==ALL)active=who;renderBook();close(entry);
 }
