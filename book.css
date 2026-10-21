@@ -83,7 +83,6 @@
   .overlay.bk:not(.bk-cal) .modal{width:100%;border-radius:24px 24px 0 0;padding-bottom:calc(20px + env(safe-area-inset-bottom))}
   .overlay.bk:not(.bk-cal) .bk-modal{height:88vh;padding-bottom:0}
 }
-@media (max-width:380px){.bk-two{grid-template-columns:1fr}}
 .bk-cts{display:flex;align-items:center}.bk-min{width:54px;text-align:center}
 .bk-yrs{max-height:252px;overflow-y:auto;position:relative;scrollbar-width:thin}
 .bk-yrs .bk-mon{height:44px}
@@ -187,3 +186,28 @@ select.bk-in option{background:var(--surface);color:var(--ink)}
 /* rounded buttons in the delete confirmation window */
 .bk-cfm .bk-ghost,.bk-cfm .bk-danger{height:48px;width:100%;border-radius:999px;font:inherit;font-weight:700;padding:0 18px}
 .bk-cfm .bk-danger{border:1px solid transparent}
+
+/* Entry / user forms: every size scales with the screen height, so the whole form fits
+   without scrolling on small and large phones alike (and looks the same on all of them). */
+.modal.bk-form{--u:min(15px,calc((100vh - 8px)/46));--u:min(15px,calc((100dvh - 8px)/46));
+  font-size:max(10px,var(--u));padding:1.2em;max-height:calc(100vh - 12px);max-height:calc(100dvh - 12px)}
+.overlay.bk:not(.bk-cal) .modal.bk-form{padding:1.2em 1.2em calc(1.2em + env(safe-area-inset-bottom))}
+.bk-form .mhead h2{font-size:1.25em}
+.bk-form .mhead p{margin:.2em 0 0;font-size:.8em}
+.bk-form .bk-f{gap:.45em;margin:.8em 0 .9em}
+.bk-form .bk-lb{margin-top:.35em;font-size:.72em}
+.bk-form .bk-in{height:2.9em;border-radius:.8em;padding:0 .9em}
+.bk-form .bk-pick{font-size:.88em}
+.bk-form .bk-pick svg{width:1.15em;height:1.15em}
+.bk-form .bk-two{gap:.6em}
+.bk-form .bk-money b{left:.9em}
+.bk-form .bk-money .bk-in{padding-left:1.9em}
+.bk-form .bk-hint{left:1.9em;font-size:16px}
+.bk-form .bk-codes{gap:.5em}
+.bk-form .bk-codes .bk-in{height:2.6em;padding:0 .2em}
+.bk-form .bk-codes small{font-size:.7em}
+.bk-form .bk-seg{padding:.25em;gap:.25em;border-radius:.9em}
+.bk-form .bk-seg button{height:2.5em;border-radius:.7em;font-size:.95em}
+.bk-form .bk-primary,.bk-form .bk-ghost{height:3em;border-radius:.9em;font-size:1em}
+.bk-form .bk-err{margin:.2em 0 0;font-size:.82em}
+.bk-form .bk-ddm{top:auto;bottom:calc(100% + .4em);max-height:min(248px,42vh)}

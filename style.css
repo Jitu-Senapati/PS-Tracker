@@ -108,3 +108,7 @@ body{overflow-x:clip}
 .logo{position:relative}
 .logo .badge{position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-weight:700;font-size:1.2rem}
 .logo img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff;padding:7px}
+
+/* PlayStation brand mark */
+.mark.ps{background:linear-gradient(145deg,#2a9bff,#00389c);color:#fff;box-shadow:0 6px 18px -6px rgba(0,112,209,.7)}
+.mark.ps svg{width:24px;height:24px}

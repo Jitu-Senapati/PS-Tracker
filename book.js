@@ -272,6 +272,18 @@ list.addEventListener('contextmenu',e=>{if(e.target.closest('.bk-row'))e.prevent
 tabsEl.addEventListener('contextmenu',e=>{if(e.target.closest('.bk-tab[data-p]'))e.preventDefault()});
 book.addEventListener('click',e=>{if(Date.now()<suppress){e.stopPropagation();e.preventDefault()}},true);
 
+/* ---------- keep forms inside the screen: shrink slightly if anything would still scroll ---------- */
+function fitForm(o){
+  const m=$('.modal',o);if(!m||o.hidden)return;
+  const run=()=>{
+    m.style.fontSize='';
+    let px=parseFloat(getComputedStyle(m).fontSize)||14,n=0;
+    while(m.scrollHeight>m.clientHeight+1&&px>9&&n++<16){px-=.5;m.style.fontSize=px+'px'}
+  };
+  run();requestAnimationFrame(run);
+}
+addEventListener('resize',()=>{if(typeof entry!=='undefined'&&!entry.hidden)fitForm(entry);if(typeof userM!=='undefined'&&!userM.hidden)fitForm(userM)});
+
 /* ---------- New / edit user ---------- */
 const userM=mount(`<section class="modal bk-form" role="dialog" aria-modal="true" aria-labelledby="usT">
   <div class="mhead"><div><h2 id="usT">New user</h2><p>Add an investor to the book</p></div>
@@ -295,11 +307,11 @@ function openUser(name){
   const c=name?Number((store.capital||{})[name])||0:0;
   $('#usCap',userM).value=c?c:'';
   $('.bk-err',userM).hidden=true;
-  open(userM);
+  open(userM);fitForm(userM);
   setTimeout(()=>{if(!userM.hidden)$('#usName',userM).focus()},80);
 }
 function saveUser(){
-  const err=m=>{const el=$('.bk-err',userM);el.textContent=m;el.hidden=false};
+  const err=m=>{const el=$('.bk-err',userM);el.textContent=m;el.hidden=false;fitForm(userM)};
   const name=$('#usName',userM).value.trim(),raw=$('#usCap',userM).value.trim().replace(/,/g,''),cap=raw===''?0:Number(raw);
   if(!name)return err('Enter the investor’s name.');
   if(name.toLowerCase()==='all')return err('“All” is the combined tab, pick another name.');
@@ -326,10 +338,10 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
     <label class="bk-lb" for="enWho">Investor</label>
     <input class="bk-in" id="enWho" list="enPeople" placeholder="New or existing investor" autocomplete="off"><datalist id="enPeople"></datalist>
     <span class="bk-lb">Date</span>
-    <button type="button" class="bk-in bk-pick" data-pick="purAt"></button>
     <div class="bk-two">
-      <button type="button" class="bk-in bk-pick" data-pick="buyAt"></button>
-      <button type="button" class="bk-in bk-pick" data-pick="sellAt"></button></div>
+      <button type="button" class="bk-in bk-pick" data-pick="purAt"></button>
+      <button type="button" class="bk-in bk-pick" data-pick="buyAt"></button></div>
+    <button type="button" class="bk-in bk-pick" data-pick="sellAt"></button>
     <span class="bk-lb">Amount</span>
     <div class="bk-two">
       <label class="bk-money"><b>₹</b><input class="bk-in" id="enBuy" inputmode="decimal" placeholder=" "><span class="bk-hint">Invested <small>(inc tax)</small></span></label>
@@ -357,7 +369,7 @@ function syncForm(){
   $('#enPlat',entry).innerHTML=(f.plat?`${platIcon(f.plat)}<span class="bk-ddn">${esc(f.plat)}</span>`:'<span class="bk-ddn ph">Platform</span>')+ic.dn;
   entry.querySelectorAll('.bk-ddm [data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===(f.plat||'')));
   $('[data-pick="purAt"]',entry).innerHTML=`${ic.cal}<span class="${f.purAt?'':'ph'}">${f.purAt?dFull(f.purAt):'Purchased date'}</span>`;
-  $('[data-pick="buyAt"]',entry).innerHTML=`${ic.cal}<span class="${f.buyAt?'':'ph'}">${f.buyAt?dFull(f.buyAt):'Send date (optional)'}</span>`;
+  $('[data-pick="buyAt"]',entry).innerHTML=`${ic.cal}<span class="${f.buyAt?'':'ph'}">${f.buyAt?dFull(f.buyAt):'Send date'}</span>`;
   $('[data-pick="sellAt"]',entry).innerHTML=`${ic.cal}<span class="${f.sellAt?'':'ph'}">${f.sellAt?dFull(f.sellAt):(closedStatus()?'Received date':'Received date (optional)')}</span>`;
   $('#enSell',entry).disabled=!closedStatus();$('#enSell',entry).closest('.bk-money').classList.toggle('off',!closedStatus());
   entry.querySelectorAll('[data-s]').forEach(b=>{const on=b.dataset.s===f.status;b.classList.toggle('on',on);b.setAttribute('aria-checked',on)});
@@ -377,11 +389,11 @@ function openEntry(ent){
   const menu=$('.bk-ddm',entry);
   menu.innerHTML=`<button type="button" role="option" data-v=""><span class="bk-lg bk-no">${ic.close}</span><span>No platform</span></button>`+names.map(n=>`<button type="button" role="option" data-v="${esc(n)}">${platIcon(n)}<span>${esc(n)}</span></button>`).join('');
   menu.hidden=true;$('#enPlat',entry).setAttribute('aria-expanded','false');
-  $('.bk-err',entry).hidden=true;syncForm();open(entry);
+  $('.bk-err',entry).hidden=true;syncForm();open(entry);fitForm(entry);
 }
 entry.addEventListener('click',e=>{
   const menu=$('.bk-ddm',entry),btn=e.target.closest('#enPlat'),opt=e.target.closest('.bk-ddm [data-v]');
-  if(btn){const o=menu.hidden;menu.hidden=!o;btn.setAttribute('aria-expanded',String(o));if(o&&menu.scrollIntoView)menu.scrollIntoView({block:'nearest'});return}
+  if(btn){const o=menu.hidden;menu.hidden=!o;btn.setAttribute('aria-expanded',String(o));return}
   if(opt){f.plat=opt.dataset.v;menu.hidden=true;$('#enPlat',entry).setAttribute('aria-expanded','false');syncForm();return}
   if(!menu.hidden&&!e.target.closest('.bk-dd')){menu.hidden=true;$('#enPlat',entry).setAttribute('aria-expanded','false')}
 });
@@ -393,7 +405,7 @@ entry.addEventListener('click',e=>{
   if(e.target.closest('[data-a="save"]'))saveEntry();
 });
 function saveEntry(){
-  const err=m=>{const el=$('.bk-err',entry);el.textContent=m;el.hidden=false};
+  const err=m=>{const el=$('.bk-err',entry);el.textContent=m;el.hidden=false;fitForm(entry)};
   let who=$('#enWho',entry).value.trim();
   const buy=parseFloat($('#enBuy',entry).value),sell=parseFloat($('#enSell',entry).value);
   if(!who)return err('Enter the investor’s name.');
