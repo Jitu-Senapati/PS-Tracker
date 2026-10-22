@@ -34,7 +34,7 @@ body.paused #sub::before{background:var(--mut)}
 @keyframes rip{to{transform:scale(1);opacity:0}}
 
 main{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:clamp(14px,2vw,20px);padding:clamp(16px,4vw,40px);max-width:1440px;margin:auto}
-.card{padding:18px;border-radius:20px;background:var(--surface);border:1px solid var(--stroke);transition:transform .45s var(--ease),border-color .3s;opacity:0;animation:rise .6s var(--ease) forwards}
+.card{padding:8px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;border-radius:20px;background:var(--surface);border:1px solid var(--stroke);transition:transform .45s var(--ease),border-color .3s;opacity:0;animation:rise .6s var(--ease) forwards}
 .card:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.16)}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 .ch{display:flex;align-items:center;gap:12px;margin-bottom:16px}
@@ -47,7 +47,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),
 .chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:10px}
 .chip{position:relative;overflow:hidden;cursor:pointer;text-align:center;font:inherit;color:var(--ink);padding:0;border-radius:12px;background:var(--raise);border:1px solid var(--stroke);
   transition:transform .3s var(--spring),background .25s,border-color .25s,color .25s}
-.chip .v{display:block;padding:12px 8px;font-weight:650;font-size:.98rem;font-variant-numeric:tabular-nums}
+.chip .v{display:block;padding:4px;font-weight:650;font-size:.98rem;font-variant-numeric:tabular-nums}
 .chip .d{display:block;padding:4px;font-size:.75rem;font-weight:650;border-top:1px solid var(--stroke);font-variant-numeric:tabular-nums}
 .chip:hover{border-color:rgba(58,208,125,.5)}
 .chip:active{transform:scale(.94)}
@@ -112,3 +112,10 @@ body{overflow-x:clip}
 /* PlayStation brand mark */
 .mark.ps{background:linear-gradient(145deg,#2a9bff,#00389c);color:#fff;box-shadow:0 6px 18px -6px rgba(0,112,209,.7)}
 .mark.ps svg{width:24px;height:24px}
+
+/* drag platform cards to reorder */
+.card.lift,.card.drag,main.dragging .card{animation:none;opacity:1}
+.card.lift{transform:scale(1.02);border-color:var(--acc);box-shadow:0 14px 34px -12px #000;transition:transform .2s var(--spring)}
+.card.shift{transition:transform .22s var(--ease)}
+.card.drag{position:relative;z-index:6;transition:none;border-color:var(--acc);box-shadow:0 22px 44px -14px #000}
+main.dragging,main.dragging *{cursor:grabbing}

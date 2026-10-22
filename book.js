@@ -127,9 +127,8 @@ function renderBook(){
     `<button class="bk-tab bk-plus" data-a="newuser" aria-label="Add user" title="Add user">${ic.plus}</button>`;
   const es=store.entries.filter(e=>all||e.who===active).sort(cmp);
   const closed=es.filter(e=>e.sell!=null);
-  const invested=es.reduce((s,e)=>s+(e.status!=='Completed'?e.buy:0),0),returned=closed.reduce((s,e)=>s+e.sell,0),net=closed.reduce((s,e)=>s+profitOf(e),0);
-  const cap=all?store.people.reduce((n,p)=>n+(Number((store.capital||{})[p])||0),0):Number((store.capital||{})[active])||0,avail=cap-invested,
-    pout=es.filter(e=>e.status==='Completed'&&e.sell!=null).reduce((n,e)=>n+profitOf(e),0);
+  const invested=es.reduce((s,e)=>s+(e.status!=='Completed'?e.buy:0),0),returned=closed.reduce((s,e)=>s+e.sell,0),pout=es.filter(e=>e.status==='Completed'&&e.sell!=null).reduce((s,e)=>s+profitOf(e),0),net=closed.reduce((s,e)=>s+profitOf(e),0)-pout;
+  const cap=all?store.people.reduce((n,p)=>n+(Number((store.capital||{})[p])||0),0):Number((store.capital||{})[active])||0,avail=cap-invested;
   $('.bk-bal',book).innerHTML=`<div><small>Capital</small><b>${cap>0?'₹'+fmt(cap):'—'}</b></div>
     <div title="Profit of completed entries"><small>Profit out</small><b class="${pout>0?'up':pout<0?'down':''}">${money(pout)}</b></div>
     <div title="Capital − invested (purchased + sold)"><small>Available</small><b class="${cap>0&&avail<0?'down':''}">${cap>0?(avail<0?'−':'')+'₹'+fmt(Math.abs(avail)):'—'}</b></div>`;

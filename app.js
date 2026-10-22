@@ -32,15 +32,22 @@ function spark(h,up){
   return `<svg class="sp" viewBox="0 0 70 26"><polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
+const ORDER_KEY='pst.order';
+const savedOrder=()=>{try{return JSON.parse(localStorage.getItem(ORDER_KEY))||[]}catch(e){return []}};
+const saveOrder=n=>{try{localStorage.setItem(ORDER_KEY,JSON.stringify(n))}catch(e){}};
+function orderedPlatforms(){
+  const o=savedOrder(),rank=p=>{const i=o.indexOf(p.name);return i<0?1e6+PLATFORMS.indexOf(p):i};
+  return [...PLATFORMS].sort((x,y)=>rank(x)-rank(y));
+}
 function renderPlatforms(flash){
-  $('platforms').innerHTML=PLATFORMS.map((p,i)=>{
+  $('platforms').innerHTML=orderedPlatforms().map((p,i)=>{
     const n=p.items.filter(x=>x.s).length;
-    return `<article class="card" style="${flash?'animation:none;opacity:1':`animation-delay:${i*70}ms`}">
+    return `<article class="card" data-name="${p.name}" style="${flash?'animation:none;opacity:1':`animation-delay:${i*70}ms`}">
       <div class="ch"><div class="logo">${logoOf(p)}</div>
         <div><h3>${p.name}</h3><small>${p.items.filter(x=>!x.label).length} denominations${p.items.some(x=>x.label)?" + custom":""}</small></div>
         <span class="tag ${n?'':'off'}">${n?n+' in stock':'Unavailable'}</span></div>
       <div class="chips">${p.items.map(it=>{const k=p.name+'-'+it.v;return `
-        <a class="chip ${it.s?'':'out'}" ${(it.u||p.home)?`href="${it.u||p.home}" target="_blank" rel="noopener noreferrer"`:''} data-ripple>
+        <a class="chip ${it.s?'':'out'}" draggable="false" ${(it.u||p.home)?`href="${it.u||p.home}" target="_blank" rel="noopener noreferrer"`:''} data-ripple>
           <span class="v">${it.label||fmt(it.v)}</span>
           ${it.d?`<span class="d ${it.d>0?'up':'down'}">${it.d>0?'+':''}${it.d}</span>`:''}
           ${it.p?`<span class="p">&#8377;${fmt(it.p)}</span>`:''}
@@ -77,5 +84,71 @@ document.addEventListener('pointerdown',e=>{
   b.appendChild(el);setTimeout(()=>el.remove(),600);
 });
 
+/* ---------- press and hold a platform card, then drag it where you want it ---------- */
+const grid=$('platforms');
+let DG=null,dsuppress=0;
+function dClean(){
+  if(!DG)return;clearTimeout(DG.timer);cancelAnimationFrame(DG.raf);
+  removeEventListener('pointermove',dMove);removeEventListener('pointerup',dEnd);removeEventListener('pointercancel',dEnd);DG=null;
+}
+function startDrag(){
+  const cards=[...grid.querySelectorAll('.card')];
+  DG.cards=cards;DG.i=cards.indexOf(DG.card);DG.t=DG.i;DG.sx=scrollX;DG.sy=scrollY;
+  DG.rects=cards.map(c=>{const r=c.getBoundingClientRect();return {l:r.left+scrollX,t:r.top+scrollY,w:r.width,h:r.height}});
+  DG.state='drag';grid.classList.add('dragging');
+  cards.forEach(c=>{c.classList.remove('lift');if(c!==DG.card)c.classList.add('shift')});DG.card.classList.add('drag');
+  dLoop();dragTo();
+}
+function dragTo(){
+  const px=DG.cx+scrollX,py=DG.cy+scrollY,i=DG.i;
+  DG.card.style.transform=`translate(${px-(DG.x+DG.sx)}px,${py-(DG.y+DG.sy)}px) scale(1.03)`;
+  let t=-1;DG.rects.forEach((r,j)=>{if(px>=r.l&&px<=r.l+r.w&&py>=r.t&&py<=r.t+r.h)t=j});
+  if(t<0){let best=Infinity;DG.rects.forEach((r,j)=>{const d=(px-r.l-r.w/2)**2+(py-r.t-r.h/2)**2;if(d<best){best=d;t=j}})}
+  DG.t=t;
+  DG.cards.forEach((c,j)=>{
+    if(j===i)return;
+    const n=(i<j&&j<=t)?j-1:(t<=j&&j<i)?j+1:j,a=DG.rects[j],b=DG.rects[n];
+    c.style.transform=n===j?'':`translate(${b.l-a.l}px,${b.t-a.t}px)`;
+  });
+}
+function dLoop(){
+  if(!DG||DG.state!=='drag')return;
+  const z=90;let v=0;
+  if(DG.cy<z)v=-Math.min(16,(z-DG.cy)/4);else if(DG.cy>innerHeight-z)v=Math.min(16,(DG.cy-(innerHeight-z))/4);
+  if(v){scrollBy(0,v);dragTo()}
+  DG.raf=requestAnimationFrame(dLoop);
+}
+function dMove(e){
+  if(!DG)return;DG.cx=e.clientX;DG.cy=e.clientY;
+  const dist=Math.hypot(e.clientX-DG.x,e.clientY-DG.y);
+  if(DG.state==='wait'){if(dist>10)dClean();return}
+  if(DG.state==='ready'){if(dist>6)startDrag();return}
+  dragTo();
+}
+function dEnd(){
+  if(!DG)return;
+  dsuppress=Date.now()+(DG.state==='wait'?0:450);
+  if(DG.state==='drag'){
+    const {cards,i,t}=DG;
+    cards.forEach(c=>{c.style.transform='';c.classList.remove('drag','shift','lift')});grid.classList.remove('dragging');
+    const names=cards.map(c=>c.dataset.name);
+    dClean();
+    if(t!==i){const [m]=names.splice(i,1);names.splice(t,0,m);saveOrder(names);renderPlatforms(true)}
+    return;
+  }
+  DG.card.classList.remove('lift');dClean();
+}
+grid.addEventListener('pointerdown',e=>{
+  if(e.button>0||DG)return;
+  const card=e.target.closest('.card');if(!card)return;
+  DG={card,x:e.clientX,y:e.clientY,cx:e.clientX,cy:e.clientY,state:'wait'};
+  DG.timer=setTimeout(()=>{if(!DG||DG.state!=='wait')return;DG.state='ready';dsuppress=Date.now()+900;if(navigator.vibrate)navigator.vibrate(12);card.classList.add('lift')},420);
+  addEventListener('pointermove',dMove);addEventListener('pointerup',dEnd);addEventListener('pointercancel',dEnd);
+});
+grid.addEventListener('touchmove',e=>{if(DG&&DG.state!=='wait'&&e.cancelable)e.preventDefault()},{passive:false});
+grid.addEventListener('click',e=>{if(Date.now()<dsuppress){e.preventDefault();e.stopPropagation()}},true);
+grid.addEventListener('dragstart',e=>e.preventDefault());
+grid.addEventListener('contextmenu',e=>{if(DG||Date.now()<dsuppress)e.preventDefault()});
+
 renderPlatforms();
-$('sub').textContent='Prices across platforms \u00b7 updated '+LAST_UPDATED;
+$('sub').textContent='Last updated '+LAST_UPDATED;
