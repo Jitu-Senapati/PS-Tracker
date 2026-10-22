@@ -101,7 +101,7 @@ const nowD=new Date();let calY=nowD.getFullYear(),calM=nowD.getMonth();
 const ov=document.createElement('div');
 ov.id='tOverlay';ov.className='overlay';ov.hidden=true;
 ov.innerHTML=`<section class="modal" role="dialog" aria-modal="true" aria-labelledby="tTitle">
-  <div class="mhead"><div><h2 id="tTitle">Price trend</h2><p id="tNote">Buy rates from the WhatsApp price update</p></div>
+  <div class="mhead"><div><div class="ttl"><h2 id="tTitle">Price trend</h2><button id="tAddBtn" class="tbtn">+ Add data</button></div><p id="tNote">Buy rates from the WhatsApp price update</p></div>
   <button id="tClose" class="btn icon sm" data-ripple aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
   <div class="ttabs" id="tTabs">${[['today','Today'],['graph','Graph'],['data','Database'],['cal','Calendar']].map(([k,l])=>`<button data-t="${k}">${l}</button>`).join('')}</div>
   <div id="tBody"></div></section>`;
@@ -133,7 +133,7 @@ function tdCell(d,f,k){
 }
 function todayHtml(){
   const ds=regDates();
-  if(!ds.length)return `<div class="tnone">No prices saved yet.<br>Open the Database tab and paste your WhatsApp price updates.</div>`;
+  if(!ds.length)return `<div class="tnone">No prices saved yet.<br>Tap “+ Add data” to paste your WhatsApp price updates.</div>`;
   if(!selDate)selDate=ds[ds.length-1];
   const latest=ds[ds.length-1],i=ds.indexOf(selDate),rec=dayRec(selDate),fs=faces();
   const offs=prices.filter(o=>o.offer&&o.date===selDate);
@@ -179,7 +179,7 @@ function chartSvg(list,sers,offs,mv,axis){
 }
 function graphHtml(){
   const fs=faces();
-  if(!fs.length)return `<div class="tnone">No prices saved yet.<br>Open the Database tab and paste your WhatsApp price updates.</div>`;
+  if(!fs.length)return `<div class="tnone">No prices saved yet.<br>Tap “+ Add data” to paste your WhatsApp price updates.</div>`;
   if(!fs.includes(face))face=fs[0];
   const f=+face,both=pcs==='both',prim=both?'p1':pcs;
   const sers=both?[{k:'p1',cls:'s1'},{k:'p5',cls:'s2'}]:[{k:pcs,cls:'s1'}];
@@ -235,10 +235,10 @@ function dataHtml(){
   const mlab=m=>MON[+m.slice(5)-1]+' '+m.slice(0,4);
   const ctl=`<div class="tt"><button data-dp="p1" class="${dbp==='p1'?'on':''}">1 pc</button><button data-dp="p5" class="${dbp==='p5'?'on':''}">5 pcs</button><span class="gap"></span>
     <select id="tMonth"><option value="all">All months</option>${months.map(m=>`<option value="${m}" ${m===dbMonth?'selected':''}>${mlab(m)}</option>`).join('')}</select>
-    <button id="tCsv">CSV</button></div>`;
+    <button id="tCsv">CSV</button><button id="tExpand" class="xp">${ov.classList.contains('full')?'⤡ Collapse':'⤢ Expand'}</button></div>`;
   const tbl=rows.length?`<div class="twrap"><table class="tbl db"><thead><tr><th>Date</th>${fs.map(f=>`<th>₹${fmt(f)}</th>`).join('')}<th></th></tr></thead><tbody>${rows.map(p=>`<tr class="${p.offer?'off':''}"><th><b>${esc(dLabel(p))}</b><small>${esc(p.session||'')}${p.valid&&p.offer?' '+esc(p.valid):''}</small></th>${fs.map(f=>{const v=val(p,f,dbp);return `<td class="n">${v===undefined?'–':'₹'+fmt(v)}</td>`}).join('')}<td><button class="del" data-del="${esc(p.id)}" aria-label="Delete">×</button></td></tr>`).join('')}</tbody></table></div>
     <p class="tfoot">${rows.length} saved · orange rows are limited offers. Tap × to delete a wrong entry.</p>`:`<div class="tnone">Nothing saved${dbMonth==='all'?' yet':' for this month'}.</div>`;
-  return (prices.length?ctl:'')+tbl+addBox();
+  return (prices.length?ctl:'')+tbl+`<div class="tadd"><button class="ghost" id="tAddIn">+ Add data</button></div>`;
 }
 function csv(){
   const fs=faces(),q=v=>v===undefined?'':v;
@@ -269,10 +269,10 @@ function calHtml(){
 function render(){
   $('#tNote',ov).textContent=note||'Buy rates from the WhatsApp price update';
   ov.querySelectorAll('#tTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
+  if(tab!=='data')ov.classList.remove('full');
   body.innerHTML=tab==='today'?todayHtml():tab==='graph'?graphHtml():tab==='data'?dataHtml():calHtml();
   wire();
   if(tab==='graph')wireChart();
-  if(tab==='data')wireAdd();
 }
 function wire(){
   ov.querySelectorAll('#tTabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render();body.scrollTop=0;ov.querySelector('.modal').scrollTop=0});
@@ -285,6 +285,8 @@ function wire(){
   on('[data-dp]',b=>b.onclick=()=>{dbp=b.dataset.dp;render()});
   on('#tMonth',s=>s.onchange=()=>{dbMonth=s.value;render()});
   on('#tCsv',b=>b.onclick=csv);
+  on('#tAddIn',b=>b.onclick=openAdd);
+  on('#tExpand',b=>b.onclick=()=>{ov.classList.toggle('full');b.textContent=ov.classList.contains('full')?'⤡ Collapse':'⤢ Expand'});
   on('[data-cm]',b=>b.onclick=()=>{calM+=+b.dataset.cm;if(calM<0){calM=11;calY--}if(calM>11){calM=0;calY++}render()});
   on('[data-d]',b=>b.onclick=()=>{selDate=b.dataset.d;tab='today';render();ov.querySelector('.modal').scrollTop=0});
   on('[data-del]',b=>b.onclick=async()=>{
@@ -295,16 +297,18 @@ function wire(){
   });
 }
 
-/* ---------- paste box ---------- */
-const addBox=()=>`<div class="tadd"><button class="ghost" id="tToggle">+ Add price update</button>
-  <div id="tForm" hidden><textarea id="tText" placeholder="Paste the WhatsApp price message here. You can paste many messages at once, oldest first." spellcheck="false"></textarea>
+/* ---------- add-data window (separate popup) ---------- */
+const addOv=document.createElement('div');
+addOv.id='tAdd';addOv.className='overlay';addOv.hidden=true;
+addOv.innerHTML=`<section class="modal" role="dialog" aria-modal="true" aria-labelledby="tAddT">
+  <div class="mhead"><div><h2 id="tAddT">Add price data</h2><p>Paste one or many WhatsApp price messages, oldest first</p></div>
+  <button id="tAddX" class="btn icon sm" data-ripple aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+  <div class="tadd"><textarea id="tText" placeholder="Paste the WhatsApp price message(s) here" spellcheck="false"></textarea>
   <label class="tdate" id="tDateRow" hidden>Date for the offer (its message has no date) <input type="date" id="tDate"></label>
-  <div class="tprev" id="tPrev"></div><button class="go" id="tSave" disabled>Save</button></div></div>`;
-function wireAdd(){
-  const tg=$('#tToggle',ov);if(!tg)return;
-  tg.onclick=()=>{const f=$('#tForm',ov);f.hidden=!f.hidden;if(!f.hidden)$('#tText',ov).focus()};
-  const ta=$('#tText',ov),pv=$('#tPrev',ov),sv=$('#tSave',ov),dr=$('#tDateRow',ov),di=$('#tDate',ov);let res=null;
-  di.value=todayStr();
+  <div class="tprev" id="tPrev"></div><button class="go" id="tSave" disabled>Save</button></div></section>`;
+document.body.appendChild(addOv);
+{
+  const ta=$('#tText',addOv),pv=$('#tPrev',addOv),sv=$('#tSave',addOv),dr=$('#tDateRow',addOv),di=$('#tDate',addOv);let res=null;
   const check=()=>{
     res=null;sv.disabled=true;dr.hidden=true;
     if(!ta.value.trim()){pv.textContent='';pv.className='tprev';return}
@@ -325,10 +329,17 @@ function wireAdd(){
     try{
       for(let i=0;i<recs.length;i+=5)await Promise.all(recs.slice(i,i+5).map(r=>api('PUT','/prices',r)));
       const ids=new Set(recs.map(r=>r.id));
-      prices=prices.filter(x=>!ids.has(x.id)).concat(recs).sort((a,b)=>a.ts-b.ts);writeCache(prices);note='saved '+recs.length;selDate=null;render();
+      prices=prices.filter(x=>!ids.has(x.id)).concat(recs).sort((a,b)=>a.ts-b.ts);writeCache(prices);
+      note='saved '+recs.length;selDate=null;ta.value='';check();sv.textContent='Save';closeAdd();render();
     }catch(e){sv.textContent='Save';sv.disabled=false;pv.className='tprev bad';pv.textContent=e.message==='auth'?'Wrong passcode. Tap Save again to re-enter it.':'Could not save everything (offline?). Tap Save again - it is safe to repeat.'}
   };
+  window.__tAddOpen=()=>{di.value=todayStr();check()};
 }
+function openAdd(){window.__tAddOpen();addOv.hidden=false;setTimeout(()=>$('#tText',addOv).focus(),50)}
+function closeAdd(){if(addOv.hidden)return;addOv.classList.add('closing');setTimeout(()=>{addOv.hidden=true;addOv.classList.remove('closing')},250)}
+$('#tAddX',addOv).onclick=closeAdd;
+addOv.onclick=e=>{if(e.target===addOv)closeAdd()};
+$('#tAddBtn',ov).onclick=openAdd;
 
 /* ---------- open / close ---------- */
 async function refresh(){
@@ -338,10 +349,10 @@ async function refresh(){
   render();
 }
 function open(){tab='today';selDate=null;render();ov.hidden=false;document.body.style.overflow='hidden';refresh()}
-function close(){if(ov.hidden)return;ov.classList.add('closing');setTimeout(()=>{ov.hidden=true;ov.classList.remove('closing');document.body.style.overflow=''},250)}
+function close(){if(ov.hidden)return;closeAdd();ov.classList.remove('full');ov.classList.add('closing');setTimeout(()=>{ov.hidden=true;ov.classList.remove('closing');document.body.style.overflow=''},250)}
 $('#tClose',ov).onclick=close;
 ov.onclick=e=>{if(e.target===ov)close()};
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!ov.hidden)close()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!addOv.hidden)closeAdd();else if(!ov.hidden)close()}});
 $('#trendBtn').onclick=open;
 window.__trend={parseAll,show:(t,d)=>{tab=t;if(d)selDate=d;render()}};
 })();

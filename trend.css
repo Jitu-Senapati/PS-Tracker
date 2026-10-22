@@ -100,3 +100,20 @@
 .tday .pf{font-size:.76rem;padding-right:8px}
 .tday .pf:nth-child(3){padding-right:6px}
 .tday + *,.twrap:has(.tday){overflow-x:visible}
+/* fixed height for every tab; only the content area scrolls */
+#tOverlay .modal{display:flex;flex-direction:column;overflow:hidden;height:min(640px,88vh);height:min(640px,88dvh);transition:width .3s var(--ease),height .3s var(--ease),border-radius .3s var(--ease)}
+#tOverlay .mhead,#tOverlay .ttabs{flex:none}
+#tBody{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:4px}
+#tOverlay.full{padding:0}
+#tOverlay.full .modal{width:100%;height:100%;max-height:none;border-radius:0;padding:calc(16px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom))}
+@media(min-width:700px){#tOverlay.full .modal{padding:20px 28px}#tOverlay.full #tBody{max-width:1100px;width:100%;margin:0 auto}}
+.ttl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tbtn{font:inherit;font-size:.75rem;font-weight:650;padding:6px 11px;border-radius:999px;border:1px solid var(--acc);color:var(--acc);background:var(--acc-soft);cursor:pointer}
+.tt .xp{margin-left:auto}
+#tAdd{z-index:25}
+#tAdd .modal{width:min(480px,100%);height:auto;max-height:88vh;overflow:auto}
+#tAdd .tadd{margin-top:14px}
+.tbl.db{table-layout:auto;font-size:.8rem}
+.tbl.db th,.tbl.db td{padding:8px 4px;white-space:normal}
+.tbl.db tbody th{padding-left:8px}
+.tbl.db td:last-child{padding:0 4px}
