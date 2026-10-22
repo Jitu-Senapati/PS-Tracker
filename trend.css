@@ -38,3 +38,7 @@
 .tadd textarea:focus{border-color:var(--acc)}
 .tprev{font-size:.8rem;color:var(--mut);min-height:1.2em}
 .tprev.ok{color:var(--acc)}.tprev.bad{color:var(--red)}
+.tchart .od{fill:#f0b429;stroke:#1b1d1a;stroke-width:1}
+.tdate{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:.78rem;color:var(--mut)}
+.tdate input{font:inherit;color:var(--ink);background:var(--raise);border:1px solid var(--stroke);border-radius:10px;padding:6px 8px;color-scheme:dark}
+.thist .up{color:var(--acc)}.thist .down{color:var(--red)}

@@ -1,4 +1,4 @@
-// Price trend overlay: shows the buyer's daily rates from the Telegram "Price Update" message as a graph.
+// Price trend overlay: shows the buyer's daily rates from the WhatsApp "Price Update" message as a graph.
 // Opened by the Trend button. Prices are stored on the shared server (same passcode as the book).
 (()=>{
 'use strict';
@@ -9,37 +9,76 @@ const fmt=n=>Number(n).toLocaleString('en-IN');
 const pad=n=>String(n).padStart(2,'0');
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-/* ---------- read the Telegram message ---------- */
-function parsePriceMessage(text){
-  const t=String(text||'').replace(/[*`_]/g,'');
-  const head=t.match(/Price\s*Update\s*(\d{1,2})\s*([A-Za-z]{3,9})(?:\s*(\d{4}))?\s*Valid\s*(\d{1,2}:\d{2}\s*[AP]M)?\s*(?:\(\s*([^)]*?)\s*\))?/i);
-  if(!head)return {error:'Could not find the "Price Update <date>" line.'};
-  const month=MON.findIndex(m=>m.toLowerCase()===head[2].slice(0,3).toLowerCase());
-  if(month<0)return {error:'Unknown month: '+head[2]};
-  const rates={},re=/₹\s*(\d{3,5})\s*Play\s*station\s*:?\s*₹\s*([\d,]+)[^\n]*\n?[^\n]*?\(\s*0*(\d+)\s*pcs?\s*Minimum\s*\)/gi;
-  let m;
-  while((m=re.exec(t))){
-    const price=+m[2].replace(/,/g,''),pcs=+m[3],r=rates[m[1]]||(rates[m[1]]={});
+/* ---------- read the WhatsApp price messages ---------- */
+// Handles: format 1 (several products, 2000-5000 with one rate line), format 2 (PlayStation only, 1pc + 5pcs lines),
+// and the limited-time "offer" message. Several messages can be pasted at once; only PlayStation rates are kept.
+const clean=t=>String(t||'').replace(/[*`_~]/g,'');
+function psRates(lines){
+  const rates={};
+  lines.forEach((ln,i)=>{
+    const m=ln.match(/₹\s*(\d{3,5})\s*Play\s*station[^₹\n]*₹\s*([\d,]+)/i);if(!m)return;
+    let pcs=1;const nx=lines[i+1]||'';
+    if(!/Play\s*station/i.test(nx)){const n=nx.match(/(\d+)\s*pcs?\s*Minimum/i);if(n)pcs=+n[1]}
+    const r=rates[m[1]]||(rates[m[1]]={}),price=+m[2].replace(/,/g,'');
     if(pcs===1)r.p1=price;else if(pcs===5)r.p5=price;
-  }
+  });
   for(const k of Object.keys(rates))if(rates[k].p1===undefined&&rates[k].p5===undefined)delete rates[k];
-  if(!Object.keys(rates).length)return {error:'No rates found in the message.'};
-  return {day:+head[1],month,year:head[3]?+head[3]:null,valid:(head[4]||'').replace(/\s+/g,' ').trim()||null,session:(head[5]||'').trim()||null,rates};
+  return rates;
 }
-// Turn the parsed message into the record we store. The message has no year, so use this year
-// (or last year if that would put the date in the future).
-function toRecord(p,now=new Date()){
-  let y=p.year||now.getFullYear();
-  if(!p.year&&Date.UTC(y,p.month,p.day)>now.getTime()+2*864e5)y--;
-  const date=`${y}-${pad(p.month+1)}-${pad(p.day)}`;
-  let hh=12,mm=0;
-  const v=p.valid&&p.valid.match(/(\d{1,2}):(\d{2})\s*([AP])M/i);
-  if(v){hh=+v[1]%12+(v[3].toUpperCase()==='P'?12:0);mm=+v[2]}
-  const ts=Date.UTC(y,p.month,p.day,hh,mm)-330*6e4; // times in the message are IST
-  return {id:date+'|'+(p.session||p.valid||'update').toLowerCase().replace(/[^a-z0-9: ]/g,'').slice(0,30),date,ts,session:p.session,valid:p.valid,rates:p.rates};
+const HEAD=/Price\s*Update\s*(\d{1,2})\s*([A-Za-z]{3,9})(?:\s*(\d{4}))?\s*Valid\s*(\d{1,2}:\d{2}\s*[AP]M)?\s*(?:\(\s*([^)]*?)\s*\))?/i;
+const OFFER_LINE=/^[^A-Za-z0-9]*offer[^A-Za-z0-9]*$/i;
+const WINDOW=/\(\s*(\d{1,2}:\d{2}\s*[AP]M)\s*To\s*(\d{1,2}:\d{2}\s*[AP]M)\s*\)/i;
+const hm=(t,def)=>{const v=t&&t.match(/(\d{1,2}):(\d{2})\s*([AP])M/i);return v?[+v[1]%12+(v[3].toUpperCase()==='P'?12:0),+v[2]]:def};
+// IST times in the messages -> epoch ms
+const istTs=(y,mo,d,h,mi)=>Date.UTC(y,mo,d,h,mi)-330*6e4;
+function parseAll(text,fallbackDate,now=new Date()){
+  const lines=clean(text).split(/\r?\n/);
+  const heads=[];lines.forEach((l,i)=>{if(/Price\s*Update/i.test(l))heads.push(i)});
+  const segs=[];
+  if(!heads.length)segs.push({head:null,lines});
+  else{
+    if(heads[0]>0)segs.push({head:null,lines:lines.slice(0,heads[0])});
+    heads.forEach((h,k)=>segs.push({head:lines[h].match(HEAD)||'bad',lines:lines.slice(h,heads[k+1]||lines.length)}));
+  }
+  const recs=[],warn=[];let last=null,needDate=false;
+  for(const sg of segs){
+    let reg=sg.lines,off=[];
+    const oi=sg.lines.findIndex(l=>OFFER_LINE.test(l));
+    if(oi>=0){reg=sg.lines.slice(0,oi);off=sg.lines.slice(oi+1)}
+    if(sg.head==='bad'){warn.push('a "Price Update" line could not be read');continue}
+    if(sg.head){
+      const h=sg.head,month=MON.findIndex(m=>m.toLowerCase()===h[2].slice(0,3).toLowerCase());
+      if(month<0){warn.push('unknown month '+h[2]);continue}
+      let y=h[3]?+h[3]:now.getFullYear();
+      if(!h[3]&&Date.UTC(y,month,+h[1])>now.getTime()+2*864e5)y--;
+      const date=`${y}-${pad(month+1)}-${pad(+h[1])}`,rates=psRates(reg);
+      last={y,month,d:+h[1],date};
+      if(!Object.keys(rates).length)warn.push(`${+h[1]} ${MON[month]}: no PlayStation rates found`);
+      else{
+        const [hh,mm]=hm(h[4],[12,0]),session=(h[5]||'').trim()||null,valid=(h[4]||'').replace(/\s+/g,' ').trim()||null;
+        recs.push({id:date+'|'+(session||valid||'update').toLowerCase().replace(/[^a-z0-9: ]/g,'').slice(0,30),date,ts:istTs(y,month,+h[1],hh,mm),session,valid,rates});
+      }
+    }
+    const orates=psRates(off);
+    if(Object.keys(orates).length){
+      let d=last;
+      if(!d){
+        const f=String(fallbackDate||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);needDate=true;
+        if(!f){warn.push('an offer has no date');continue}
+        d={y:+f[1],month:+f[2]-1,d:+f[3],date:fallbackDate};
+      }
+      const w=off.join('\n').match(WINDOW),[hh,mm]=hm(w&&w[1],[12,0]);
+      const win=w?w[1].replace(/\s+/g,'')+' - '+w[2].replace(/\s+/g,''):null;
+      let id=d.date+'|offer-'+pad(hh)+pad(mm);
+      while(recs.some(r=>r.id===id))id+='b';
+      recs.push({id,date:d.date,ts:istTs(d.y,d.month,d.d,hh,mm),session:'Offer',valid:win,offer:true,rates:orates});
+    }
+  }
+  return {records:recs,warnings:warn,needDate};
 }
 const dLabel=r=>{const [y,m,d]=r.date.split('-');return `${+d} ${MON[+m-1]}`};
 const dFull=r=>dLabel(r)+(r.session?' · '+r.session:'');
+const todayStr=()=>{const n=new Date();return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`};
 
 /* ---------- storage: server first, this device keeps a copy ---------- */
 const getKey=()=>{try{return localStorage.getItem(KEYSTORE)||''}catch(e){return ''}};
@@ -58,15 +97,15 @@ let prices=readCache(),face='1000',pcs='p1',range=7,note='';
 const ov=document.createElement('div');
 ov.id='tOverlay';ov.className='overlay';ov.hidden=true;
 ov.innerHTML=`<section class="modal" role="dialog" aria-modal="true" aria-labelledby="tTitle">
-  <div class="mhead"><div><h2 id="tTitle">Price trend</h2><p id="tNote">Buy rates from the Telegram price update</p></div>
+  <div class="mhead"><div><h2 id="tTitle">Price trend</h2><p id="tNote">Buy rates from the WhatsApp price update</p></div>
   <button id="tClose" class="btn icon sm" data-ripple aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
   <div id="tBody"></div></section>`;
 document.body.appendChild(ov);
 const body=$('#tBody',ov);
 
-const faces=()=>{const s=new Set();prices.forEach(p=>Object.keys(p.rates).forEach(k=>s.add(k)));return [...s].sort((a,b)=>a-b)};
+const faces=()=>{const s=new Set();prices.filter(p=>!p.offer).forEach(p=>Object.keys(p.rates).forEach(k=>s.add(k)));return [...s].sort((a,b)=>a-b)};
 const val=(p,f,k)=>p.rates[f]?p.rates[f][k]:undefined;
-const seriesOf=(f,k)=>prices.filter(p=>val(p,f,k)!==undefined);
+const seriesOf=(f,k)=>prices.filter(p=>!p.offer&&val(p,f,k)!==undefined);
 function inRange(list){
   if(!range||!list.length)return list;
   const cut=list[list.length-1].ts-range*864e5;
@@ -76,28 +115,31 @@ const chg=(a,b)=>{const d=a-b;return {d,pct:b?d/b*100:0}};
 const chgTxt=c=>c.d===0?'no change':`${c.d>0?'▲':'▼'} ₹${fmt(Math.abs(c.d))} (${Math.abs(c.pct).toFixed(1)}%)`;
 const chgCls=c=>c.d===0?'':c.d>0?'up':'down';
 
-function chartSvg(list,k){
+function chartSvg(list,k,offs){
   const W=340,H=170,L=44,R=10,T=10,B=22,n=list.length;
   const vs=list.map(p=>val(p,face,k));
-  let mn=Math.min(...vs),mx=Math.max(...vs);
+  const ovs=offs.map(o=>val(o,face,k));
+  let mn=Math.min(...vs,...ovs),mx=Math.max(...vs,...ovs);
   if(mn===mx){mn-=5;mx+=5}
   const pr=(mx-mn)*.15;mn-=pr;mx+=pr;
   const x=i=>n===1?(L+W-R)/2:L+(W-L-R)*i/(n-1),y=v=>T+(H-T-B)*(1-(v-mn)/(mx-mn));
   const pts=vs.map((v,i)=>[x(i),y(v)]);
+  const xT=ts=>{if(n===1||ts<=list[0].ts)return x(0);if(ts>=list[n-1].ts)return x(n-1);let i=0;while(list[i+1].ts<ts)i++;return x(i+(ts-list[i].ts)/(list[i+1].ts-list[i].ts))};
+  const od=offs.map(o=>`<circle class="od" cx="${xT(o.ts)}" cy="${y(val(o,face,k))}" r="3.6"><title>${esc(dFull(o))} ₹${fmt(val(o,face,k))}</title></circle>`).join('');
   let g='';
   for(let i=0;i<3;i++){const v=mn+(mx-mn)*i/2,yy=y(v);g+=`<line class="gl" x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}"/><text x="${L-6}" y="${yy+3}" text-anchor="end">${fmt(Math.round(v))}</text>`}
   const line=pts.map(p=>p.join(',')).join(' ');
   const area=n>1?`<polygon class="ar" points="${pts[0][0]},${H-B} ${line} ${pts[n-1][0]},${H-B}"/>`:'';
   const dots=n<=24?pts.map(p=>`<circle class="dt" cx="${p[0]}" cy="${p[1]}" r="2.6"/>`).join(''):'';
   const lab=(i,a)=>`<text x="${x(i)}" y="${H-6}" text-anchor="${a}">${dLabel(list[i])}</text>`;
-  return {pts,svg:`<svg viewBox="0 0 ${W} ${H}" id="tSvg"><defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3ad07d" stop-opacity=".28"/><stop offset="1" stop-color="#3ad07d" stop-opacity="0"/></linearGradient></defs>${g}${area}${n>1?`<polyline class="ln" points="${line}"/>`:''}${dots}${n>1?lab(0,'start')+lab(n-1,'end'):lab(0,'middle')}<line id="tCur" class="cur" y1="${T}" y2="${H-B}" x1="-9" x2="-9"/></svg>`,W};
+  return {pts,svg:`<svg viewBox="0 0 ${W} ${H}" id="tSvg"><defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3ad07d" stop-opacity=".28"/><stop offset="1" stop-color="#3ad07d" stop-opacity="0"/></linearGradient></defs>${g}${area}${n>1?`<polyline class="ln" points="${line}"/>`:''}${dots}${od}${n>1?lab(0,'start')+lab(n-1,'end'):lab(0,'middle')}<line id="tCur" class="cur" y1="${T}" y2="${H-B}" x1="-9" x2="-9"/></svg>`,W};
 }
 
 function render(){
   const fs=faces();
-  $('#tNote',ov).textContent=note||'Buy rates from the Telegram price update';
+  $('#tNote',ov).textContent=note||'Buy rates from the WhatsApp price update';
   if(!prices.length){
-    body.innerHTML=`<div class="tnone">No prices saved yet.<br>Paste your first Telegram price update below.</div>${addBox()}`;
+    body.innerHTML=`<div class="tnone">No prices saved yet.<br>Paste your WhatsApp price updates below.</div>${addBox()}`;
     wireAdd();return;
   }
   if(!fs.includes(face))face=fs[0];
@@ -107,14 +149,18 @@ function render(){
   const c=prev?chg(cur,val(prev,face,pcs)):null;
   const vs=list.map(p=>val(p,face,pcs));
   const hi=Math.max(...vs),lo=Math.min(...vs),avg=Math.round(vs.reduce((a,b)=>a+b,0)/vs.length);
-  const ch=list.length?chartSvg(list,pcs):null;
+  const offs=list.length?prices.filter(o=>o.offer&&val(o,face,pcs)!==undefined&&o.ts>=list[0].ts&&o.ts<=list[list.length-1].ts+864e5):[];
+  const ch=list.length?chartSvg(list,pcs,offs):null;
+  const offRows=offs.slice(-5).reverse().map(o=>{
+    const rg=all.filter(p=>p.date===o.date).pop(),ov=val(o,face,pcs),c2=rg?chg(ov,val(rg,face,pcs)):null;
+    return `<div class="thist"><span><b>${esc(dLabel(o))}</b>${o.valid?' · '+esc(o.valid):''}</span><span class="${c2?chgCls(c2):''}"><b>₹${fmt(ov)}</b>${c2&&c2.d?` (${c2.d>0?'+':'-'}${fmt(Math.abs(c2.d))} vs regular)`:''}</span></div>`}).join('');
   const rows=fs.map(f=>{
     const a=seriesOf(f,pcs),l=a[a.length-1],pv=a[a.length-2];
     if(!l)return '';
     const cc=pv?chg(val(l,f,pcs),val(pv,f,pcs)):null,o=pcs==='p1'?'p5':'p1',ov2=val(l,f,o);
     return `<div class="tl ${f===face?'sel':''}" data-f="${f}"><div class="f">₹${fmt(f)}<small>${ov2!==undefined?(pcs==='p1'?'5 pcs ':'1 pc ')+'₹'+fmt(ov2):''}</small></div><div class="v">₹${fmt(val(l,f,pcs))}</div><div class="c ${cc?chgCls(cc):''}">${cc?(cc.d===0?'–':(cc.d>0?'▲ ':'▼ ')+fmt(Math.abs(cc.d))):''}</div></div>`;
   }).join('');
-  const hist=prices.slice(-8).reverse().map(p=>`<div class="thist"><span><b>${esc(dFull(p))}</b>${p.valid?' · valid '+esc(p.valid):''}</span><button data-del="${esc(p.id)}">Delete</button></div>`).join('');
+  const hist=prices.slice(-10).reverse().map(p=>`<div class="thist"><span><b>${esc(dFull(p))}</b>${p.valid?' · valid '+esc(p.valid):''}</span><button data-del="${esc(p.id)}">Delete</button></div>`).join('');
   body.innerHTML=`
   <div class="tt" id="tFace">${fs.map(f=>`<button data-f="${f}" class="${f===face?'on':''}">${fmt(f)}</button>`).join('')}</div>
   <div class="tt" id="tPcs"><button data-p="p1" class="${pcs==='p1'?'on':''}">1 pc min</button><button data-p="p5" class="${pcs==='p5'?'on':''}">5 pcs min</button>
@@ -123,6 +169,7 @@ function render(){
   <p class="tsub" id="tTip">${esc(dFull(latest))}${latest.valid?' · valid '+esc(latest.valid):''}</p>`:`<div class="tnone">No ${pcs==='p1'?'1 pc':'5 pcs'} rate saved for ₹${fmt(face)}.</div>`}
   ${ch?`<div class="tchart">${ch.svg}</div>
   <div class="tstats"><div>Highest<b>₹${fmt(hi)}</b></div><div>Average<b>₹${fmt(avg)}</b></div><div>Lowest<b>₹${fmt(lo)}</b></div></div>`:''}
+  ${offRows?`<div class="th">Limited offers for ₹${fmt(face)} (orange dots)</div>${offRows}`:''}
   <div class="th">Latest rates (${pcs==='p1'?'1 pc':'5 pcs'} min)</div>${rows}
   <div class="th">Saved updates</div>${hist}${addBox()}`;
   if(ch)wireChart(list,ch);
@@ -155,30 +202,36 @@ function wire(){
 
 /* ---------- paste box ---------- */
 const addBox=()=>`<div class="tadd"><button class="ghost" id="tToggle">+ Add price update</button>
-  <div id="tForm" hidden><textarea id="tText" placeholder="Paste the Telegram price message here" spellcheck="false"></textarea>
-  <div class="tprev" id="tPrev"></div><button class="go" id="tSave" disabled>Save update</button></div></div>`;
+  <div id="tForm" hidden><textarea id="tText" placeholder="Paste the WhatsApp price message here. You can paste many messages at once, oldest first." spellcheck="false"></textarea>
+  <label class="tdate" id="tDateRow" hidden>Date for the offer (its message has no date) <input type="date" id="tDate"></label>
+  <div class="tprev" id="tPrev"></div><button class="go" id="tSave" disabled>Save</button></div></div>`;
 function wireAdd(){
   const tg=$('#tToggle',ov);if(!tg)return;
   tg.onclick=()=>{const f=$('#tForm',ov);f.hidden=!f.hidden;if(!f.hidden)$('#tText',ov).focus()};
-  const ta=$('#tText',ov),pv=$('#tPrev',ov),sv=$('#tSave',ov);let rec=null;
-  ta.oninput=()=>{
-    rec=null;sv.disabled=true;
+  const ta=$('#tText',ov),pv=$('#tPrev',ov),sv=$('#tSave',ov),dr=$('#tDateRow',ov),di=$('#tDate',ov);let res=null;
+  di.value=todayStr();
+  const check=()=>{
+    res=null;sv.disabled=true;dr.hidden=true;
     if(!ta.value.trim()){pv.textContent='';pv.className='tprev';return}
-    const p=parsePriceMessage(ta.value);
-    if(p.error){pv.textContent=p.error;pv.className='tprev bad';return}
-    rec=toRecord(p);
-    const n=Object.keys(rec.rates).length,old=prices.some(x=>x.id===rec.id);
+    const r=parseAll(ta.value,di.value);
+    dr.hidden=!r.needDate;
+    const recs=r.records,warn=r.warnings.length?' · skipped: '+r.warnings.join('; '):'';
+    if(!recs.length){pv.className='tprev bad';pv.textContent='No PlayStation rates found in this text.'+warn;return}
+    const reg=recs.filter(x=>!x.offer),off=recs.length-reg.length,amts=new Set();recs.forEach(x=>Object.keys(x.rates).forEach(k=>amts.add(k)));
+    const ds=recs.map(x=>x.date).sort(),old=recs.filter(x=>prices.some(p=>p.id===x.id)).length;
     pv.className='tprev ok';
-    pv.textContent=`${dFull(rec)}${rec.valid?' · valid '+rec.valid:''} · ${n} amount${n>1?'s':''}${old?' · will replace the saved one':''}`;
-    sv.disabled=false;
+    pv.textContent=`${reg.length} update${reg.length===1?'':'s'}${off?` + ${off} offer${off>1?'s':''}`:''} · ${amts.size} amount${amts.size===1?'':'s'} · ${dLabel({date:ds[0]})}${ds[0]!==ds[ds.length-1]?' to '+dLabel({date:ds[ds.length-1]}):''}${old?` · ${old} will replace saved`:''}${warn}`;
+    res=r;sv.disabled=false;
   };
+  ta.oninput=check;di.onchange=check;
   sv.onclick=async()=>{
-    if(!rec||!ensureKey())return;
-    sv.disabled=true;sv.textContent='Saving…';
+    if(!res||!ensureKey())return;
+    const recs=res.records.slice();sv.disabled=true;sv.textContent='Saving…';
     try{
-      await api('PUT','/prices',rec);
-      prices=prices.filter(x=>x.id!==rec.id).concat(rec).sort((a,b)=>a.ts-b.ts);writeCache(prices);note='saved';render();
-    }catch(e){sv.textContent='Save update';sv.disabled=false;pv.className='tprev bad';pv.textContent=e.message==='auth'?'Wrong passcode. Tap Save again to re-enter it.':'Could not save (offline?). Try again.'}
+      for(let i=0;i<recs.length;i+=5)await Promise.all(recs.slice(i,i+5).map(r=>api('PUT','/prices',r)));
+      const ids=new Set(recs.map(r=>r.id));
+      prices=prices.filter(x=>!ids.has(x.id)).concat(recs).sort((a,b)=>a.ts-b.ts);writeCache(prices);note='saved '+recs.length;render();
+    }catch(e){sv.textContent='Save';sv.disabled=false;pv.className='tprev bad';pv.textContent=e.message==='auth'?'Wrong passcode. Tap Save again to re-enter it.':'Could not save everything (offline?). Tap Save again - it is safe to repeat.'}
   };
 }
 
@@ -195,5 +248,5 @@ $('#tClose',ov).onclick=close;
 ov.onclick=e=>{if(e.target===ov)close()};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!ov.hidden)close()});
 $('#trendBtn').onclick=open;
-window.__trend={parsePriceMessage,toRecord};
+window.__trend={parseAll};
 })();
