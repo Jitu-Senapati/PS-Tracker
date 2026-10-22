@@ -141,8 +141,7 @@ function todayHtml(){
     <div><b>${selDate===latest?'Latest · ':''}${dayLong(selDate)}</b><span>${rec?esc(rec.session||'')+(rec.valid?' · valid '+esc(rec.valid):''):'no regular update this day'}</span></div>
     <button data-nav="1" ${i<0||i>=ds.length-1?'disabled':''} aria-label="Next day">›</button></div>`;
   const rows=rec?fs.map(f=>`<tr><th>₹${fmt(f)}</th>${tdCell(selDate,f,'p1')}${tdCell(selDate,f,'p5')}</tr>`).join(''):'';
-  const table=rec?`<div class="twrap"><table class="tbl"><thead><tr><th>Amount</th><th colspan="2">1 pc min</th><th colspan="2">5 pcs min</th></tr>
-    <tr class="sub"><th></th><th>Rate · vs prev day</th><th>Profit</th><th>Rate · vs prev day</th><th>Profit</th></tr></thead><tbody>${rows}</tbody></table></div>
+  const table=rec?`<div class="twrap"><table class="tbl tday"><colgroup><col style="width:18%"><col style="width:23%"><col style="width:18%"><col style="width:23%"><col style="width:18%"></colgroup><thead><tr><th>Amount</th><th colspan="2">1 pc min</th><th colspan="2">5 pcs min</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="tfoot">Profit = rate over face value. Change compares with the last update of the previous day with a rate.</p>`:'';
   const offHtml=offs.map(o=>`<div class="toff"><b>Limited offer${o.valid?' · '+esc(o.valid):''}</b><span>${Object.keys(o.rates).sort((a,b)=>a-b).map(f=>`₹${fmt(f)} → <em>₹${fmt(o.rates[f].p1??o.rates[f].p5)}</em>`).join('  ·  ')}</span></div>`).join('');
   return nav+table+offHtml;
@@ -262,7 +261,7 @@ function calHtml(){
   }
   const inMonth=[...ds].filter(x=>x.startsWith(`${calY}-${pad(calM+1)}`)).length;
   return `<div class="cnav"><button data-cm="-1" aria-label="Previous month">‹</button><b>${MON[calM]} ${calY}</b><button data-cm="1" aria-label="Next month">›</button></div>
-  <div class="cgrid"><span class="ch">Mon</span><span class="ch">Tue</span><span class="ch">Wed</span><span class="ch">Thu</span><span class="ch">Fri</span><span class="ch">Sat</span><span class="ch">Sun</span>${cells}</div>
+  <div class="cgrid"><span class="cdw">Mon</span><span class="cdw">Tue</span><span class="cdw">Wed</span><span class="cdw">Thu</span><span class="cdw">Fri</span><span class="cdw">Sat</span><span class="cdw">Sun</span>${cells}</div>
   <p class="tfoot">${inMonth} day${inMonth===1?'':'s'} with prices this month. Small number = ₹${ref?fmt(ref):''} 1 pc rate, green/red = up/down vs previous day, orange dot = limited offer. Tap a day to open its price chart.</p>`;
 }
 
