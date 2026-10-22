@@ -13,6 +13,7 @@ export class BookDO extends DurableObject {
     const fresh = this.sql.exec("SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'table' AND name = 'people'").one().c === 0;
     this.sql.exec("CREATE TABLE IF NOT EXISTS entries (id TEXT PRIMARY KEY, data TEXT NOT NULL)");
     this.sql.exec("CREATE TABLE IF NOT EXISTS people (name TEXT PRIMARY KEY, pos INTEGER)");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS prices (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, data TEXT NOT NULL)");
     try { this.sql.exec("ALTER TABLE people ADD COLUMN capital REAL NOT NULL DEFAULT 0"); } catch (e) { /* already added */ }
     if (fresh) ["Chinu", "Jitu", "Goat"].forEach((p, i) => this.sql.exec("INSERT OR IGNORE INTO people (name, pos) VALUES (?, ?)", p, i));
   }
@@ -27,6 +28,27 @@ export class BookDO extends DurableObject {
       const capital = Object.fromEntries(rows.map(r => [r.name, r.capital || 0]));
       const entries = this.sql.exec("SELECT data FROM entries").toArray().map(r => JSON.parse(r.data));
       return J({ people, capital, entries });
+    }
+    // Buy-rate history from the Telegram "Price Update" messages (one row per date + session).
+    if (m === "GET" && sub === "prices") {
+      const prices = this.sql.exec("SELECT data FROM prices ORDER BY ts").toArray().map(r => JSON.parse(r.data));
+      return J({ prices });
+    }
+    if (m === "PUT" && sub === "prices") {
+      const p = await request.json().catch(() => null);
+      const okRates = p && p.rates && typeof p.rates === "object" && !Array.isArray(p.rates) && Object.keys(p.rates).length > 0 && Object.keys(p.rates).length <= 12 &&
+        Object.entries(p.rates).every(([k, v]) => /^\d{3,6}$/.test(k) && v && typeof v === "object" &&
+          ["p1", "p5"].every(f => v[f] === undefined || (Number.isFinite(v[f]) && v[f] > 0 && v[f] < 1e7)));
+      if (!p || typeof p.id !== "string" || p.id.length > 60 || !/^\d{4}-\d{2}-\d{2}$/.test(p.date || "") || !Number.isFinite(p.ts) || !okRates)
+        return J({ error: "bad price update" }, 400);
+      const data = JSON.stringify(p);
+      if (data.length > 3000) return J({ error: "too big" }, 400);
+      this.sql.exec("INSERT INTO prices (id, ts, data) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET ts = excluded.ts, data = excluded.data", p.id, p.ts, data);
+      return J({ ok: true });
+    }
+    if (m === "DELETE" && sub === "prices" && parts[3]) {
+      this.sql.exec("DELETE FROM prices WHERE id = ?", decodeURIComponent(parts[3]));
+      return J({ ok: true });
     }
     if (m === "PUT" && sub === "entry") {
       const e = await request.json().catch(() => null);

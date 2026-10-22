@@ -17,6 +17,7 @@
 <title>PS Code Tracker</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="book.css">
+<link rel="stylesheet" href="trend.css">
 </head>
 <body>
 <div class="bg" aria-hidden="true"></div>
@@ -26,7 +27,7 @@
     <div><h1>PS Code <em>Tracker</em></h1><p id="sub">Last updated</p></div>
   </div>
   <div class="actions">
-    <button id="trendBtn" class="btn icon" data-ripple aria-label="Price trends" title="Price trends (coming soon)">
+    <button id="trendBtn" class="btn icon" data-ripple aria-label="Price trends" title="Price trends">
       <svg viewBox="0 0 24 24"><path d="M4 16l5-5 4 4 7-8M15 7h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button id="powerBtn" class="btn icon on" data-ripple aria-label="Live updates" title="Live updates (coming soon)">
@@ -55,6 +56,7 @@
 <script src="data.js"></script>
 <script src="app.js"></script>
 <script src="book.js"></script>
+<script src="trend.js"></script>
 <script>if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));</script>
 </body>
 </html>

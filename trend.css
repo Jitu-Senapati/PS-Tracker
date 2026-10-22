@@ -1,0 +1,40 @@
+/* Price trend overlay (opened by the Trend button) */
+#tOverlay .modal{width:min(560px,100%)}
+.tt{display:flex;gap:6px;margin:14px 0 8px;overflow-x:auto;scrollbar-width:none}
+.tt::-webkit-scrollbar{display:none}
+.tt button{flex:1 0 auto;font:inherit;font-size:.85rem;font-weight:600;padding:8px 14px;border-radius:10px;cursor:pointer;color:var(--mut);background:var(--raise);border:1px solid var(--stroke);transition:all .25s var(--ease)}
+.tt button.on{color:var(--acc);border-color:var(--acc);background:var(--acc-soft)}
+.tbig{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:12px 2px 2px}
+.tbig b{font-size:1.9rem;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.tbig span{font-size:.85rem;font-weight:650;font-variant-numeric:tabular-nums}
+.tsub{margin:0 2px 6px;color:var(--mut);font-size:.78rem;min-height:1.1em}
+.tchart{position:relative;margin:6px 0 4px;border-radius:14px;background:var(--raise);border:1px solid var(--stroke);padding:8px 4px 4px;touch-action:pan-y}
+.tchart svg{display:block;width:100%;height:auto}
+.tchart .gl{stroke:rgba(255,255,255,.07);stroke-width:1}
+.tchart text{fill:#7d8f85;font-size:9px;font-family:inherit}
+.tchart .ln{fill:none;stroke:var(--acc);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tchart .ar{fill:url(#tg);stroke:none}
+.tchart .dt{fill:var(--acc)}
+.tchart .cur{stroke:rgba(255,255,255,.25);stroke-width:1;stroke-dasharray:3 3}
+.tnone{padding:34px 10px;text-align:center;color:var(--mut);font-size:.88rem}
+.tstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
+.tstats div{padding:8px 10px;border-radius:12px;background:var(--raise);border:1px solid var(--stroke);font-size:.7rem;color:var(--mut)}
+.tstats b{display:block;margin-top:2px;font-size:.95rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.th{margin:16px 2px 4px;font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);font-weight:650}
+.tl{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:11px 2px;border-bottom:1px solid var(--stroke);cursor:pointer;font-variant-numeric:tabular-nums}
+.tl:last-child{border-bottom:0}
+.tl .f{font-weight:600}.tl .f small{color:var(--mut);font-weight:500;margin-left:6px}
+.tl .v{font-weight:650;text-align:right}
+.tl .c{min-width:64px;text-align:right;font-size:.75rem;font-weight:650;color:var(--mut)}
+.tl.sel .f{color:var(--acc)}
+.thist{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 2px;border-bottom:1px solid var(--stroke);font-size:.82rem;color:var(--mut)}
+.thist b{color:var(--ink);font-weight:600}
+.thist button{font:inherit;font-size:.75rem;color:var(--red);background:none;border:0;cursor:pointer;padding:4px 8px}
+.tadd{margin-top:14px;display:grid;gap:8px}
+.tadd .go{font:inherit;font-weight:650;padding:11px 14px;border-radius:12px;cursor:pointer;color:#04110a;background:var(--acc);border:0}
+.tadd .go:disabled{opacity:.4;cursor:not-allowed}
+.tadd .ghost{font:inherit;font-weight:600;padding:11px 14px;border-radius:12px;cursor:pointer;color:var(--ink);background:var(--raise);border:1px solid var(--stroke)}
+.tadd textarea{width:100%;min-height:130px;resize:vertical;font:inherit;font-size:.8rem;color:var(--ink);background:var(--raise);border:1px solid var(--stroke);border-radius:12px;padding:10px;outline:none}
+.tadd textarea:focus{border-color:var(--acc)}
+.tprev{font-size:.8rem;color:var(--mut);min-height:1.2em}
+.tprev.ok{color:var(--acc)}.tprev.bad{color:var(--red)}
