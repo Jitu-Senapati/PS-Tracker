@@ -117,3 +117,17 @@
 .tbl.db th,.tbl.db td{padding:8px 4px;white-space:normal}
 .tbl.db tbody th{padding-left:8px}
 .tbl.db td:last-child{padding:0 4px}
+.tt .xp{flex:0 0 auto;width:38px;padding:7px 0;font-size:1.05rem;line-height:1}
+/* limited offer as a table, like the regular chart */
+.toffh{margin:16px 2px 6px;color:#f0b429;font-weight:650;font-size:.82rem}
+.tw-off{border-color:rgba(240,180,41,.4)}
+.tw-off thead th{color:#f0b429}
+/* power button: green static / grey spinning / red static */
+#powerBtn{transition:color .35s var(--ease),background .35s var(--ease),border-color .35s var(--ease)}
+#powerBtn.err{color:var(--red);border-color:rgba(239,106,106,.45);background:rgba(239,106,106,.1)}
+#powerBtn.load{color:var(--mut);border-color:var(--stroke);background:var(--surface)}
+#powerBtn.load svg{animation:pwpulse 1.2s ease-in-out infinite}
+#powerBtn.load::after{content:"";position:absolute;inset:3px;border-radius:50%;border:2px solid transparent;border-top-color:var(--mut);border-right-color:rgba(255,255,255,.12);pointer-events:none;animation:pwspin .8s linear infinite}
+@keyframes pwspin{to{transform:rotate(360deg)}}
+@keyframes pwpulse{50%{opacity:.3}}
+@media(prefers-reduced-motion:reduce){#powerBtn.load::after,#powerBtn.load svg{animation-duration:2.4s}}

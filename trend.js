@@ -143,7 +143,13 @@ function todayHtml(){
   const rows=rec?fs.map(f=>`<tr><th>₹${fmt(f)}</th>${tdCell(selDate,f,'p1')}${tdCell(selDate,f,'p5')}</tr>`).join(''):'';
   const table=rec?`<div class="twrap"><table class="tbl tday"><colgroup><col style="width:18%"><col style="width:23%"><col style="width:18%"><col style="width:23%"><col style="width:18%"></colgroup><thead><tr><th>Amount</th><th colspan="2">1 pc min</th><th colspan="2">5 pcs min</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="tfoot">Profit = rate over face value. Change compares with the last update of the previous day with a rate.</p>`:'';
-  const offHtml=offs.map(o=>`<div class="toff"><b>Limited offer${o.valid?' · '+esc(o.valid):''}</b><span>${Object.keys(o.rates).sort((a,b)=>a-b).map(f=>`₹${fmt(f)} → <em>₹${fmt(o.rates[f].p1??o.rates[f].p5)}</em>`).join('  ·  ')}</span></div>`).join('');
+  const offCell=(o,f,k)=>{
+    const v=o.rates[f]?o.rates[f][k]:undefined;if(v===undefined)return '<td class="n">–</td><td class="pf">–</td>';
+    const rg=dayVal(selDate,f,k),c=rg===undefined?null:chg(v,rg),p=profit(v,f);
+    return `<td class="n"><b>₹${fmt(v)}</b><i class="c ${c?chgCls(c):''}">${c?(c.d===0?'same as regular':(c.d>0?'▲ +':'▼ −')+fmt(Math.abs(c.d))):'offer'}</i></td><td class="pf ${p>=0?'up':'down'}">${pctTxt(p)}</td>`;
+  };
+  const offHtml=offs.map(o=>`<div class="toffh">Limited offer${o.valid?' · '+esc(o.valid):''}</div>
+    <div class="twrap tw-off"><table class="tbl tday"><colgroup><col style="width:18%"><col style="width:23%"><col style="width:18%"><col style="width:23%"><col style="width:18%"></colgroup><thead><tr><th>Amount</th><th colspan="2">1 pc min</th><th colspan="2">5 pcs min</th></tr></thead><tbody>${Object.keys(o.rates).sort((x,y)=>x-y).map(f=>`<tr><th>₹${fmt(f)}</th>${offCell(o,f,'p1')}${offCell(o,f,'p5')}</tr>`).join('')}</tbody></table></div>`).join('')+(offs.length?'<p class="tfoot">Offer change is compared with that day’s regular rate.</p>':'');
   return nav+table+offHtml;
 }
 
@@ -235,7 +241,7 @@ function dataHtml(){
   const mlab=m=>MON[+m.slice(5)-1]+' '+m.slice(0,4);
   const ctl=`<div class="tt"><button data-dp="p1" class="${dbp==='p1'?'on':''}">1 pc</button><button data-dp="p5" class="${dbp==='p5'?'on':''}">5 pcs</button><span class="gap"></span>
     <select id="tMonth"><option value="all">All months</option>${months.map(m=>`<option value="${m}" ${m===dbMonth?'selected':''}>${mlab(m)}</option>`).join('')}</select>
-    <button id="tCsv">CSV</button><button id="tExpand" class="xp">${ov.classList.contains('full')?'⤡ Collapse':'⤢ Expand'}</button></div>`;
+    <button id="tCsv">CSV</button><button id="tExpand" class="xp" aria-label="${ov.classList.contains('full')?'Collapse':'Expand'}" title="${ov.classList.contains('full')?'Collapse':'Expand'}">${ov.classList.contains('full')?'⤡':'⤢'}</button></div>`;
   const tbl=rows.length?`<div class="twrap"><table class="tbl db"><thead><tr><th>Date</th>${fs.map(f=>`<th>₹${fmt(f)}</th>`).join('')}<th></th></tr></thead><tbody>${rows.map(p=>`<tr class="${p.offer?'off':''}"><th><b>${esc(dLabel(p))}</b><small>${esc(p.session||'')}${p.valid&&p.offer?' '+esc(p.valid):''}</small></th>${fs.map(f=>{const v=val(p,f,dbp);return `<td class="n">${v===undefined?'–':'₹'+fmt(v)}</td>`}).join('')}<td><button class="del" data-del="${esc(p.id)}" aria-label="Delete">×</button></td></tr>`).join('')}</tbody></table></div>
     <p class="tfoot">${rows.length} saved · orange rows are limited offers. Tap × to delete a wrong entry.</p>`:`<div class="tnone">Nothing saved${dbMonth==='all'?' yet':' for this month'}.</div>`;
   return (prices.length?ctl:'')+tbl+`<div class="tadd"><button class="ghost" id="tAddIn">+ Add data</button></div>`;
@@ -286,14 +292,16 @@ function wire(){
   on('#tMonth',s=>s.onchange=()=>{dbMonth=s.value;render()});
   on('#tCsv',b=>b.onclick=csv);
   on('#tAddIn',b=>b.onclick=openAdd);
-  on('#tExpand',b=>b.onclick=()=>{ov.classList.toggle('full');b.textContent=ov.classList.contains('full')?'⤡ Collapse':'⤢ Expand'});
+  on('#tExpand',b=>b.onclick=()=>{const f=ov.classList.toggle('full');b.textContent=f?'⤡':'⤢';b.title=b.ariaLabel=f?'Collapse':'Expand'});
   on('[data-cm]',b=>b.onclick=()=>{calM+=+b.dataset.cm;if(calM<0){calM=11;calY--}if(calM>11){calM=0;calY++}render()});
   on('[data-d]',b=>b.onclick=()=>{selDate=b.dataset.d;tab='today';render();ov.querySelector('.modal').scrollTop=0});
-  on('[data-del]',b=>b.onclick=async()=>{
-    const id=b.dataset.del,p=prices.find(x=>x.id===id);
-    if(!p||!confirm('Delete the '+dFull(p)+' entry?'))return;
-    try{await api('DELETE','/prices/'+encodeURIComponent(id));prices=prices.filter(x=>x.id!==id);writeCache(prices);note='deleted';render()}
-    catch(e){alert(e.message==='auth'?'Wrong passcode.':'Could not delete (offline?).')}
+  on('[data-del]',b=>b.onclick=()=>{
+    const id=b.dataset.del,p=prices.find(x=>x.id===id);if(!p)return;
+    askDelete(p.offer?'Delete this offer?':'Delete this update?',`${dFull(p)}${p.offer&&p.valid?' · '+p.valid:''}. This can’t be undone.`,async()=>{
+      try{await api('DELETE','/prices/'+encodeURIComponent(id));prices=prices.filter(x=>x.id!==id);writeCache(prices);note='deleted'}
+      catch(e){note=e.message==='auth'?'wrong passcode - delete failed':'could not delete (offline?)'}
+      render();
+    });
   });
 }
 
@@ -341,6 +349,22 @@ $('#tAddX',addOv).onclick=closeAdd;
 addOv.onclick=e=>{if(e.target===addOv)closeAdd()};
 $('#tAddBtn',ov).onclick=openAdd;
 
+/* ---------- delete confirmation (same look as the Book's) ---------- */
+const cfm=document.createElement('div');
+cfm.className='overlay bk bk-cf';cfm.hidden=true;
+cfm.innerHTML=`<section class="modal bk-cfm" role="alertdialog" aria-modal="true" aria-labelledby="tcfT">
+  <div class="bk-cfi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/></svg></div>
+  <h2 id="tcfT">Delete?</h2><p class="bk-cft"></p>
+  <div class="bk-two bk-act"><button class="btn bk-ghost" data-ripple data-x>Cancel</button><button class="btn bk-danger" data-ripple data-a="cfdel">Delete</button></div></section>`;
+document.body.appendChild(cfm);
+let cfFn=null;
+function askDelete(title,text,fn){$('#tcfT',cfm).textContent=title;$('.bk-cft',cfm).textContent=text;cfFn=fn;cfm.hidden=false}
+function closeCf(){if(cfm.hidden||cfm.classList.contains('closing'))return;cfm.classList.add('closing');setTimeout(()=>{cfm.hidden=true;cfm.classList.remove('closing')},250)}
+cfm.addEventListener('click',e=>{
+  if(e.target.closest('[data-a="cfdel"]')){const fn=cfFn;cfFn=null;closeCf();if(fn)fn();return}
+  if(e.target===cfm||e.target.closest('[data-x]')){cfFn=null;closeCf()}
+});
+
 /* ---------- open / close ---------- */
 async function refresh(){
   if(!ensureKey()){note='passcode needed for live prices';render();return}
@@ -352,7 +376,35 @@ function open(){tab='today';selDate=null;render();ov.hidden=false;document.body.
 function close(){if(ov.hidden)return;closeAdd();ov.classList.remove('full');ov.classList.add('closing');setTimeout(()=>{ov.hidden=true;ov.classList.remove('closing');document.body.style.overflow=''},250)}
 $('#tClose',ov).onclick=close;
 ov.onclick=e=>{if(e.target===ov)close()};
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!addOv.hidden)closeAdd();else if(!ov.hidden)close()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!cfm.hidden){cfFn=null;closeCf();return}if(!addOv.hidden)closeAdd();else if(!ov.hidden)close()}});
 $('#trendBtn').onclick=open;
+/* ---------- power button = server connection: green (connected), grey spinning (loading), red (offline) ---------- */
+const pw=$('#powerBtn');
+if(pw){
+  const TITLE={ok:'Connected - tap to re-check',load:'Connecting…',err:'Offline - tap to retry'};
+  let inflight=0,failed=false,shownAt=0,settle=0;
+  const paint=st=>{pw.classList.toggle('on',st==='ok');pw.classList.toggle('load',st==='load');pw.classList.toggle('err',st==='err');pw.title=TITLE[st];pw.setAttribute('aria-label',TITLE[st]);pw.setAttribute('aria-busy',st==='load')};
+  const begin=()=>{clearTimeout(settle);inflight++;if(inflight===1){failed=false;shownAt=Date.now();paint('load')}};
+  const end=ok=>{
+    inflight=Math.max(0,inflight-1);if(!ok)failed=true;
+    if(inflight)return;
+    settle=setTimeout(()=>{if(!inflight)paint(failed?'err':'ok')},Math.max(0,700-(Date.now()-shownAt)));
+  };
+  const _f=window.fetch.bind(window);
+  window.fetch=function(u,o){
+    const url=typeof u==='string'?u:(u&&u.url)||'';
+    if(!url.includes('/api/'))return _f(u,o);
+    begin();
+    return _f(u,o).then(r=>{end(r.ok||r.status===401);return r},e=>{end(false);throw e});
+  };
+  const ping=async()=>{
+    if(!ensureKey())return;
+    try{const d=await api('GET','/prices');prices=d.prices||prices;writeCache(prices);if(!ov.hidden){note='';render()}}catch(e){}
+  };
+  pw.onclick=ping;
+  window.addEventListener('offline',()=>{clearTimeout(settle);inflight=0;paint('err')});
+  window.addEventListener('online',()=>{if(getKey())ping()});
+  paint(navigator.onLine===false?'err':'ok');
+}
 window.__trend={parseAll,show:(t,d)=>{tab=t;if(d)selDate=d;render()}};
 })();
