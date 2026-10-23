@@ -148,3 +148,12 @@
 .tbl.gt .c.up{color:var(--acc)}.tbl.gt .c.down{color:var(--red)}
 .ld{display:inline-block;width:14px;height:0;border-top:3px solid var(--c);border-radius:2px;margin-right:6px;vertical-align:middle}
 .ld.dash{border-top-style:dashed}
+/* paddings: overlay 16 -> 14, window 20 -> 14 */
+#tOverlay{padding:14px}
+#tOverlay .modal{padding:14px}
+/* special offers toggle */
+.thr{display:flex;align-items:center;justify-content:space-between}
+.tsw{position:relative;width:42px;height:24px;flex:none;padding:0;border-radius:99px;border:1px solid var(--stroke);background:var(--raise);cursor:pointer;transition:all .25s var(--ease)}
+.tsw i{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--mut);transition:all .25s var(--ease)}
+.tsw.on{border-color:#f0b429;background:rgba(240,180,41,.18)}
+.tsw.on i{left:20px;background:#f0b429;box-shadow:0 0 10px #f0b429}

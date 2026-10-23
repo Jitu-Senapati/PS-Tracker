@@ -94,7 +94,7 @@ const writeCache=l=>{try{localStorage.setItem(CACHE,JSON.stringify(l))}catch(e){
 
 /* ---------- state ---------- */
 let prices=readCache(),note='';
-let tab='today',selDate=null,gFaces=new Set(['1000']),gPcs=new Set(['p1']),pct=false,range=7,dbp='p1',dbMonth='all';
+let tab='today',selDate=null,gFaces=new Set(['1000']),gPcs=new Set(['p1']),pct=false,showOff=true,range=7,dbp='p1',dbMonth='all';
 const nowD=new Date();let calY=nowD.getFullYear(),calM=nowD.getMonth();
 
 /* ---------- overlay shell ---------- */
@@ -148,7 +148,7 @@ function todayHtml(){
     const rg=dayVal(selDate,f,k),c=rg===undefined?null:chg(v,rg),p=profit(v,f);
     return `<td class="n"><b>₹${fmt(v)}</b><i class="c ${c?chgCls(c):''}">${c?(c.d===0?'same as regular':(c.d>0?'▲ +':'▼ −')+fmt(Math.abs(c.d))):'offer'}</i></td><td class="pf ${p>=0?'up':'down'}">${pctTxt(p)}</td>`;
   };
-  const offHtml=offs.map(o=>`<div class="toffh">Limited offer${o.valid?' · '+esc(o.valid):''}</div>
+  const offHtml=offs.map(o=>`<div class="toffh">Special offer${o.valid?' · '+esc(o.valid):''}</div>
     <div class="twrap tw-off"><table class="tbl tday"><colgroup><col style="width:18%"><col style="width:23%"><col style="width:18%"><col style="width:23%"><col style="width:18%"></colgroup><thead><tr><th>Amount</th><th colspan="2">1 pc min</th><th colspan="2">5 pcs min</th></tr></thead><tbody>${Object.keys(o.rates).sort((x,y)=>x-y).map(f=>`<tr><th>₹${fmt(f)}</th>${offCell(o,f,'p1')}${offCell(o,f,'p5')}</tr>`).join('')}</tbody></table></div>`).join('')+(offs.length?'<p class="tfoot">Offer change is compared with that day’s regular rate.</p>':'');
   return nav+table+offHtml;
 }
@@ -199,7 +199,7 @@ function graphHtml(){
     sers.push({f,k,color:fcol(f),dash:k==='p5',label:`${kshort(f)} ${plab(k)}`,get:p=>{const v=val(p,f,k);return v===undefined?undefined:pct?profit(v,+f):v}})})});
   const axis=v=>pct?v.toFixed(0)+'%':fmt(Math.round(v));
   const show=v=>pct?pctTxt(v):'₹'+fmt(Math.round(v));
-  const head=`<div class="tt" id="tFace">${fs.map(f=>`<button data-f="${f}" style="--c:${fcol(f)}" class="sw ${gFaces.has(f)?'on':''}" aria-pressed="${gFaces.has(f)}"><i></i>${fmt(f)}</button>`).join('')}</div>
+  const head=`<div class="tt" id="tFace">${fs.map(f=>`<button data-f="${f}" style="--c:${fcol(f)}" class="sw ${gFaces.has(f)?'on':''}" aria-pressed="${gFaces.has(f)}">${fmt(f)}</button>`).join('')}</div>
   <div class="tt"><button data-p="p1" class="sw ${gPcs.has('p1')?'on':''}" aria-pressed="${gPcs.has('p1')}">1 pc</button><button data-p="p5" class="sw ${gPcs.has('p5')?'on':''}" aria-pressed="${gPcs.has('p5')}">5 pcs</button>
     <span class="gap"></span><button id="tPct" class="sw ${pct?'on':''}" aria-pressed="${pct}" title="Show profit % instead of ₹">%</button>
     <span class="gap"></span>${[[7,'7d'],[30,'30d'],[0,'All']].map(([r,l])=>`<button data-r="${r}" class="${range===r?'on':''}">${l}</button>`).join('')}</div>`;
@@ -211,8 +211,9 @@ function graphHtml(){
     return {sr,last,cur:last?sr.get(last):undefined,dd:prev?sr.get(last)-sr.get(prev):null,vs,hi:vv.length?Math.max(...vv):undefined,lo:vv.length?Math.min(...vv):undefined,avg:vv.length?vv.reduce((a,b)=>a+b,0)/vv.length:undefined,
       hiP:vs[vv.indexOf(Math.max(...vv))],loP:vs[vv.indexOf(Math.min(...vv))]};
   }).filter(x=>x.cur!==undefined);
-  const offs=[];
-  sers.forEach(sr=>prices.forEach(o=>{if(o.offer&&val(o,sr.f,sr.k)!==undefined&&o.ts>=list[0].ts&&o.ts<=list[list.length-1].ts+864e5)offs.push({o,ser:sr,v:sr.get(o)})}));
+  const offsAll=[];
+  sers.forEach(sr=>prices.forEach(o=>{if(o.offer&&val(o,sr.f,sr.k)!==undefined&&o.ts>=list[0].ts&&o.ts<=list[list.length-1].ts+864e5)offsAll.push({o,ser:sr,v:sr.get(o)})}));
+  const offs=showOff?offsAll:[];
   const ch=chartSvg(list,sers,offs,axis);
   G={list,sers,xs:ch.xs,show};
   const dtxt=(dd)=>dd===null?'':dd===0?'no change':(dd>0?'▲ ':'▼ ')+(pct?Math.abs(dd).toFixed(1)+' pts':'₹'+fmt(Math.abs(dd)));
@@ -226,13 +227,14 @@ function graphHtml(){
   }else{
     summary=`<p class="tsub" id="tTip">Touch the graph to compare any day</p>
     <div class="tchart">${ch.svg}</div>
-    <div class="twrap"><table class="tbl gt"><thead><tr><th>Line</th><th>Latest</th><th>Change</th><th>High</th><th>Low</th></tr></thead><tbody>${stat.map(x=>`<tr><th><i class="ld ${x.sr.dash?'dash':''}" style="--c:${x.sr.color}"></i>${esc(x.sr.label)}</th><td class="n"><b>${x.cur===undefined?'–':show(x.cur)}</b></td><td class="n"><span class="c ${x.dd>0?'up':x.dd<0?'down':''}">${x.dd===null?'–':x.dd===0?'–':(x.dd>0?'▲ ':'▼ ')+(pct?Math.abs(x.dd).toFixed(1):fmt(Math.abs(x.dd)))}</span></td><td class="n">${x.hi===undefined?'–':show(x.hi)}</td><td class="n">${x.lo===undefined?'–':show(x.lo)}</td></tr>`).join('')}</tbody></table></div>
-    <p class="tfoot">Solid line = 1 pc, dashed = 5 pcs. Change is against the previous update.</p>`;
+    <div class="twrap"><table class="tbl gt"><thead><tr><th>Line</th><th>Low</th><th>Avg</th><th>High</th></tr></thead><tbody>${stat.map(x=>`<tr><th><i class="ld ${x.sr.dash?'dash':''}" style="--c:${x.sr.color}"></i>${esc(x.sr.label)}</th><td class="n">${x.lo===undefined?'–':show(x.lo)}</td><td class="n">${x.avg===undefined?'–':show(x.avg)}</td><td class="n">${x.hi===undefined?'–':show(x.hi)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="tfoot">Solid line = 1 pc, dashed = 5 pcs.</p>`;
   }
   const offRows=offs.slice().sort((a,b)=>b.o.ts-a.o.ts).slice(0,6).map(q=>{
     const rg=regs().filter(p=>p.date===q.o.date).pop(),raw=val(q.o,q.ser.f,q.ser.k),r0=rg?val(rg,q.ser.f,q.ser.k):undefined;
     return `<div class="thist"><span><b>${esc(dLabel(q.o))}</b> · ${esc(q.ser.label)}${q.o.valid?' · '+esc(q.o.valid):''}</span><span class="${r0!==undefined&&raw!==r0?(raw>r0?'up':'down'):''}"><b>₹${fmt(raw)}</b>${r0!==undefined&&raw!==r0?` (${raw>r0?'+':'-'}${fmt(Math.abs(raw-r0))} vs regular)`:''}</span></div>`}).join('');
-  return head+summary+(offRows?`<div class="th">Limited offers (orange dots)</div>${offRows}`:'');
+  const hasOff=offsAll.length>0;
+  return head+summary+(hasOff?`<div class="th thr"><span>Special offers</span><button id="tOff" class="tsw ${showOff?'on':''}" role="switch" aria-checked="${showOff}" aria-label="Show special offers on the graph"><i></i></button></div>${showOff?offRows:''}`:'');
 }
 function wireChart(){
   const svg=$('#tSvg',ov);if(!svg||!G)return;
@@ -258,7 +260,7 @@ function dataHtml(){
     <select id="tMonth"><option value="all">All months</option>${months.map(m=>`<option value="${m}" ${m===dbMonth?'selected':''}>${mlab(m)}</option>`).join('')}</select>
     <button id="tCsv">CSV</button><button id="tExpand" class="xp" aria-label="${ov.classList.contains('full')?'Collapse':'Expand'}" title="${ov.classList.contains('full')?'Collapse':'Expand'}">${ov.classList.contains('full')?'⤡':'⤢'}</button></div>`;
   const tbl=rows.length?`<div class="twrap"><table class="tbl db"><thead><tr><th>Date</th>${fs.map(f=>`<th>₹${fmt(f)}</th>`).join('')}<th></th></tr></thead><tbody>${rows.map(p=>`<tr class="${p.offer?'off':''}"><th><b>${esc(dLabel(p))}</b><small>${esc(p.session||'')}${p.valid&&p.offer?' '+esc(p.valid):''}</small></th>${fs.map(f=>{const v=val(p,f,dbp);return `<td class="n">${v===undefined?'–':'₹'+fmt(v)}</td>`}).join('')}<td><button class="del" data-del="${esc(p.id)}" aria-label="Delete">×</button></td></tr>`).join('')}</tbody></table></div>
-    <p class="tfoot">${rows.length} saved · orange rows are limited offers. Tap × to delete a wrong entry.</p>`:`<div class="tnone">Nothing saved${dbMonth==='all'?' yet':' for this month'}.</div>`;
+    <p class="tfoot">${rows.length} saved · orange rows are special offers. Tap × to delete a wrong entry.</p>`:`<div class="tnone">Nothing saved${dbMonth==='all'?' yet':' for this month'}.</div>`;
   return (prices.length?ctl:'')+tbl+`<div class="tadd"><button class="ghost" id="tAddIn">+ Add data</button></div>`;
 }
 function csv(){
@@ -283,7 +285,7 @@ function calHtml(){
   const inMonth=[...ds].filter(x=>x.startsWith(`${calY}-${pad(calM+1)}`)).length;
   return `<div class="cnav"><button data-cm="-1" aria-label="Previous month">‹</button><b>${MON[calM]} ${calY}</b><button data-cm="1" aria-label="Next month">›</button></div>
   <div class="cgrid"><span class="cdw">Mon</span><span class="cdw">Tue</span><span class="cdw">Wed</span><span class="cdw">Thu</span><span class="cdw">Fri</span><span class="cdw">Sat</span><span class="cdw">Sun</span>${cells}</div>
-  <p class="tfoot">${inMonth} day${inMonth===1?'':'s'} with prices this month. Small number = ₹${ref?fmt(ref):''} 1 pc rate, green/red = up/down vs previous day, orange dot = limited offer. Tap a day to open its price chart.</p>`;
+  <p class="tfoot">${inMonth} day${inMonth===1?'':'s'} with prices this month. Small number = ₹${ref?fmt(ref):''} 1 pc rate, green/red = up/down vs previous day, orange dot = special offer. Tap a day to open its price chart.</p>`;
 }
 
 /* ---------- render ---------- */
@@ -302,6 +304,7 @@ function wire(){
   on('#tFace [data-f]',b=>b.onclick=()=>{const f=b.dataset.f;if(gFaces.has(f)){if(gFaces.size>1)gFaces.delete(f)}else gFaces.add(f);render()});
   on('[data-p]',b=>b.onclick=()=>{const k=b.dataset.p;if(gPcs.has(k)){if(gPcs.size>1)gPcs.delete(k)}else gPcs.add(k);render()});
   on('#tPct',b=>b.onclick=()=>{pct=!pct;render()});
+  on('#tOff',b=>b.onclick=()=>{showOff=!showOff;render()});
   on('[data-r]',b=>b.onclick=()=>{range=+b.dataset.r;render()});
   on('[data-dp]',b=>b.onclick=()=>{dbp=b.dataset.dp;render()});
   on('#tMonth',s=>s.onchange=()=>{dbMonth=s.value;render()});
