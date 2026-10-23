@@ -94,7 +94,7 @@ const writeCache=l=>{try{localStorage.setItem(CACHE,JSON.stringify(l))}catch(e){
 
 /* ---------- state ---------- */
 let prices=readCache(),note='';
-let tab='today',selDate=null,face='1000',pcs='p1',metric='rate',range=7,dbp='p1',dbMonth='all';
+let tab='today',selDate=null,gFaces=new Set(['1000']),gPcs=new Set(['p1']),pct=false,range=7,dbp='p1',dbMonth='all';
 const nowD=new Date();let calY=nowD.getFullYear(),calM=nowD.getMonth();
 
 /* ---------- overlay shell ---------- */
@@ -153,16 +153,21 @@ function todayHtml(){
   return nav+table+offHtml;
 }
 
-/* ---------- tab 2: graph ---------- */
+/* ---------- tab 2: graph (denominations and 1pc/5pcs are switches, so several lines can be compared) ---------- */
+const PAL=['#3ad07d','#6ab0ff','#b48cff','#ff7eb6','#4de1d2','#ffa94d'];
+const fcol=f=>PAL[Math.max(0,faces().indexOf(String(f)))%PAL.length];
+const kshort=f=>+f>=1000&&+f%1000===0?(+f/1000)+'k':String(f);
+const plab=k=>k==='p1'?'1 pc':'5 pcs';
+let G=null;
 function inRange(list){
   if(!range||!list.length)return list;
   const cut=list[list.length-1].ts-range*864e5;
   return list.filter(p=>p.ts>=cut);
 }
-function chartSvg(list,sers,offs,mv,axis){
+function chartSvg(list,sers,offs,axis){
   const W=340,H=170,L=44,R=10,T=10,B=22,n=list.length;
-  const all=[];sers.forEach(sr=>list.forEach(p=>{const v=mv(p,sr.k);if(v!==undefined)all.push(v)}));
-  offs.forEach(o=>all.push(mv(o,sers[0].k)));
+  const all=[];sers.forEach(sr=>list.forEach(p=>{const v=sr.get(p);if(v!==undefined)all.push(v)}));
+  offs.forEach(x=>all.push(x.v));
   let mn=Math.min(...all),mx=Math.max(...all);
   if(mn===mx){mn-=5;mx+=5}
   const pr=(mx-mn)*.15;mn-=pr;mx+=pr;
@@ -171,64 +176,74 @@ function chartSvg(list,sers,offs,mv,axis){
   let g='';
   for(let i=0;i<3;i++){const v=mn+(mx-mn)*i/2,yy=y(v);g+=`<line class="gl" x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}"/><text x="${L-6}" y="${yy+3}" text-anchor="end">${axis(v)}</text>`}
   let lines='',area='',dots='';
-  sers.forEach((sr,si)=>{
-    const pts=[];list.forEach((p,i)=>{const v=mv(p,sr.k);if(v!==undefined)pts.push([x(i),y(v)])});
+  sers.forEach(sr=>{
+    const pts=[];list.forEach((p,i)=>{const v=sr.get(p);if(v!==undefined)pts.push([x(i),y(v)])});
     if(pts.length>1){
-      lines+=`<polyline class="ln ${sr.cls}" points="${pts.map(p=>p.join(',')).join(' ')}"/>`;
-      if(si===0&&sers.length===1)area=`<polygon class="ar" points="${pts[0][0]},${H-B} ${pts.map(p=>p.join(',')).join(' ')} ${pts[pts.length-1][0]},${H-B}"/>`;
+      const d=pts.map(p=>p.join(',')).join(' ');
+      lines+=`<polyline class="ln" style="stroke:${sr.color}" ${sr.dash?'stroke-dasharray="5 4"':''} points="${d}"/>`;
+      if(sers.length===1)area=`<polygon class="ar" style="fill:url(#tg)" points="${pts[0][0]},${H-B} ${d} ${pts[pts.length-1][0]},${H-B}"/>`;
     }
-    if(pts.length<=24)dots+=pts.map(p=>`<circle class="dt ${sr.cls}" cx="${p[0]}" cy="${p[1]}" r="2.6"/>`).join('');
+    if(pts.length<=24)dots+=pts.map(p=>`<circle class="dt" style="fill:${sr.color}" cx="${p[0]}" cy="${p[1]}" r="2.6"/>`).join('');
   });
-  const od=offs.map(o=>`<circle class="od" cx="${xT(o.ts)}" cy="${y(mv(o,sers[0].k))}" r="3.6"><title>${esc(dFull(o))} ${axis(mv(o,sers[0].k))}</title></circle>`).join('');
+  const od=offs.map(q=>`<circle class="od" style="stroke:${q.ser.color}" cx="${xT(q.o.ts)}" cy="${y(q.v)}" r="3.8"><title>${esc(dFull(q.o))} ${esc(q.ser.label)} ${axis(q.v)}</title></circle>`).join('');
   const lab=(i,a)=>`<text x="${x(i)}" y="${H-6}" text-anchor="${a}">${dLabel(list[i])}</text>`;
-  return {xs:list.map((_,i)=>x(i)),W,svg:`<svg viewBox="0 0 ${W} ${H}" id="tSvg"><defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3ad07d" stop-opacity=".28"/><stop offset="1" stop-color="#3ad07d" stop-opacity="0"/></linearGradient></defs>${g}${area}${lines}${dots}${od}${n>1?lab(0,'start')+lab(n-1,'end'):lab(0,'middle')}<line id="tCur" class="cur" y1="${T}" y2="${H-B}" x1="-9" x2="-9"/></svg>`};
+  const c0=sers[0].color;
+  return {xs:list.map((_,i)=>x(i)),svg:`<svg viewBox="0 0 ${W} ${H}" id="tSvg"><defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c0}" stop-opacity=".28"/><stop offset="1" stop-color="${c0}" stop-opacity="0"/></linearGradient></defs>${g}${area}${lines}${dots}${od}${n>1?lab(0,'start')+lab(n-1,'end'):lab(0,'middle')}<line id="tCur" class="cur" y1="${T}" y2="${H-B}" x1="-9" x2="-9"/></svg>`};
 }
 function graphHtml(){
   const fs=faces();
-  if(!fs.length)return `<div class="tnone">No prices saved yet.<br>Tap “+ Add data” to paste your WhatsApp price updates.</div>`;
-  if(!fs.includes(face))face=fs[0];
-  const f=+face,both=pcs==='both',prim=both?'p1':pcs;
-  const sers=both?[{k:'p1',cls:'s1'},{k:'p5',cls:'s2'}]:[{k:pcs,cls:'s1'}];
-  const mv=(p,k)=>{const v=val(p,face,k);return v===undefined?undefined:metric==='pct'?profit(v,f):v};
-  const axis=v=>metric==='pct'?v.toFixed(0)+'%':fmt(Math.round(v));
-  const show=v=>metric==='pct'?pctTxt(v):'₹'+fmt(v);
-  const all=regs().filter(p=>sers.some(sr=>val(p,face,sr.k)!==undefined)),list=inRange(all);
-  const ps=list.filter(p=>val(p,face,prim)!==undefined);
-  const head=`<div class="tt" id="tFace">${fs.map(x=>`<button data-f="${x}" class="${x===face?'on':''}">${fmt(x)}</button>`).join('')}</div>
-  <div class="tt"><button data-p="p1" class="${pcs==='p1'?'on':''}">1 pc</button><button data-p="p5" class="${pcs==='p5'?'on':''}">5 pcs</button><button data-p="both" class="${both?'on':''}">Both</button>
-    <span class="gap"></span><button data-m="rate" class="${metric==='rate'?'on':''}">₹</button><button data-m="pct" class="${metric==='pct'?'on':''}">%</button>
+  if(!fs.length){G=null;return `<div class="tnone">No prices saved yet.<br>Tap “+ Add data” to paste your WhatsApp price updates.</div>`}
+  gFaces=new Set([...gFaces].filter(f=>fs.includes(f)));if(!gFaces.size)gFaces.add(fs[0]);
+  const sers=[];
+  fs.forEach(f=>{if(!gFaces.has(f))return;['p1','p5'].forEach(k=>{if(!gPcs.has(k))return;
+    sers.push({f,k,color:fcol(f),dash:k==='p5',label:`${kshort(f)} ${plab(k)}`,get:p=>{const v=val(p,f,k);return v===undefined?undefined:pct?profit(v,+f):v}})})});
+  const axis=v=>pct?v.toFixed(0)+'%':fmt(Math.round(v));
+  const show=v=>pct?pctTxt(v):'₹'+fmt(Math.round(v));
+  const head=`<div class="tt" id="tFace">${fs.map(f=>`<button data-f="${f}" style="--c:${fcol(f)}" class="sw ${gFaces.has(f)?'on':''}" aria-pressed="${gFaces.has(f)}"><i></i>${fmt(f)}</button>`).join('')}</div>
+  <div class="tt"><button data-p="p1" class="sw ${gPcs.has('p1')?'on':''}" aria-pressed="${gPcs.has('p1')}">1 pc</button><button data-p="p5" class="sw ${gPcs.has('p5')?'on':''}" aria-pressed="${gPcs.has('p5')}">5 pcs</button>
+    <span class="gap"></span><button id="tPct" class="sw ${pct?'on':''}" aria-pressed="${pct}" title="Show profit % instead of ₹">%</button>
     <span class="gap"></span>${[[7,'7d'],[30,'30d'],[0,'All']].map(([r,l])=>`<button data-r="${r}" class="${range===r?'on':''}">${l}</button>`).join('')}</div>`;
-  if(!list.length||!ps.length)return head+`<div class="tnone">No saved rate for ₹${fmt(face)} in this range.</div>`;
-  const last=ps[ps.length-1],prev=seriesOf(face,prim).slice(-2)[0]!==last?seriesOf(face,prim).slice(-2)[0]:null;
-  const cur=mv(last,prim),cv=prev&&prev!==last?mv(prev,prim):undefined;
-  const dd=cv===undefined?null:cur-cv;
-  const vs=ps.map(p=>mv(p,prim)),hiP=ps[vs.indexOf(Math.max(...vs))],loP=ps[vs.indexOf(Math.min(...vs))],avg=vs.reduce((a,b)=>a+b,0)/vs.length;
-  const offs=prices.filter(o=>o.offer&&val(o,face,prim)!==undefined&&o.ts>=list[0].ts&&o.ts<=list[list.length-1].ts+864e5);
-  const ch=chartSvg(list,sers,offs,mv,axis);
-  const offRows=offs.slice(-5).reverse().map(o=>{
-    const rg=regs().filter(p=>p.date===o.date).pop(),ov2=val(o,face,prim),r0=rg?val(rg,face,prim):undefined;
-    return `<div class="thist"><span><b>${esc(dLabel(o))}</b>${o.valid?' · '+esc(o.valid):''}</span><span class="${r0!==undefined&&ov2!==r0?(ov2>r0?'up':'down'):''}"><b>₹${fmt(ov2)}</b>${r0!==undefined&&ov2!==r0?` (${ov2>r0?'+':'-'}${fmt(Math.abs(ov2-r0))} vs regular)`:''}</span></div>`}).join('');
-  return head+`<div class="tbig"><b>${show(cur)}</b>${dd===null?'':`<span class="${dd>0?'up':dd<0?'down':''}">${dd===0?'no change':(dd>0?'▲ ':'▼ ')+(metric==='pct'?Math.abs(dd).toFixed(1)+' pts':'₹'+fmt(Math.abs(dd)))}</span>`}
-    ${both?'<span class="leg"><i class="s1"></i>1 pc <i class="s2"></i>5 pcs</span>':''}</div>
-  <p class="tsub" id="tTip">${esc(dFull(last))}${last.valid?' · valid '+esc(last.valid):''}</p>
-  <div class="tchart">${ch.svg}</div>
-  <div class="tstats"><div>Highest<b>${show(Math.max(...vs))}</b><u>${dLabel(hiP)}</u></div><div>Average<b>${show(metric==='rate'?Math.round(avg):avg)}</b><u>${ps.length} updates</u></div><div>Lowest<b>${show(Math.min(...vs))}</b><u>${dLabel(loP)}</u></div></div>
-  ${offRows?`<div class="th">Limited offers for ₹${fmt(face)} (orange dots)</div>${offRows}`:''}`
-  ;
+  const all=regs().filter(p=>sers.some(sr=>sr.get(p)!==undefined)),list=inRange(all);
+  if(!list.length){G=null;return head+`<div class="tnone">No saved rate for this selection in this range.</div>`}
+  const stat=sers.map(sr=>{
+    const full=regs().filter(p=>sr.get(p)!==undefined),last=full[full.length-1],prev=full.length>1?full[full.length-2]:null;
+    const vs=list.filter(p=>sr.get(p)!==undefined),vv=vs.map(sr.get);
+    return {sr,last,cur:last?sr.get(last):undefined,dd:prev?sr.get(last)-sr.get(prev):null,vs,hi:vv.length?Math.max(...vv):undefined,lo:vv.length?Math.min(...vv):undefined,avg:vv.length?vv.reduce((a,b)=>a+b,0)/vv.length:undefined,
+      hiP:vs[vv.indexOf(Math.max(...vv))],loP:vs[vv.indexOf(Math.min(...vv))]};
+  }).filter(x=>x.cur!==undefined);
+  const offs=[];
+  sers.forEach(sr=>prices.forEach(o=>{if(o.offer&&val(o,sr.f,sr.k)!==undefined&&o.ts>=list[0].ts&&o.ts<=list[list.length-1].ts+864e5)offs.push({o,ser:sr,v:sr.get(o)})}));
+  const ch=chartSvg(list,sers,offs,axis);
+  G={list,sers,xs:ch.xs,show};
+  const dtxt=(dd)=>dd===null?'':dd===0?'no change':(dd>0?'▲ ':'▼ ')+(pct?Math.abs(dd).toFixed(1)+' pts':'₹'+fmt(Math.abs(dd)));
+  let summary;
+  if(sers.length===1&&stat.length===1){
+    const x=stat[0];
+    summary=`<div class="tbig"><b>${show(x.cur)}</b>${x.dd===null?'':`<span class="${x.dd>0?'up':x.dd<0?'down':''}">${dtxt(x.dd)}</span>`}</div>
+    <p class="tsub" id="tTip">${esc(dFull(x.last))}${x.last.valid?' · valid '+esc(x.last.valid):''}</p>
+    <div class="tchart">${ch.svg}</div>
+    <div class="tstats"><div>Highest<b>${show(x.hi)}</b><u>${x.hiP?dLabel(x.hiP):''}</u></div><div>Average<b>${show(x.avg)}</b><u>${x.vs.length} updates</u></div><div>Lowest<b>${show(x.lo)}</b><u>${x.loP?dLabel(x.loP):''}</u></div></div>`;
+  }else{
+    summary=`<p class="tsub" id="tTip">Touch the graph to compare any day</p>
+    <div class="tchart">${ch.svg}</div>
+    <div class="twrap"><table class="tbl gt"><thead><tr><th>Line</th><th>Latest</th><th>Change</th><th>High</th><th>Low</th></tr></thead><tbody>${stat.map(x=>`<tr><th><i class="ld ${x.sr.dash?'dash':''}" style="--c:${x.sr.color}"></i>${esc(x.sr.label)}</th><td class="n"><b>${x.cur===undefined?'–':show(x.cur)}</b></td><td class="n"><span class="c ${x.dd>0?'up':x.dd<0?'down':''}">${x.dd===null?'–':x.dd===0?'–':(x.dd>0?'▲ ':'▼ ')+(pct?Math.abs(x.dd).toFixed(1):fmt(Math.abs(x.dd)))}</span></td><td class="n">${x.hi===undefined?'–':show(x.hi)}</td><td class="n">${x.lo===undefined?'–':show(x.lo)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="tfoot">Solid line = 1 pc, dashed = 5 pcs. Change is against the previous update.</p>`;
+  }
+  const offRows=offs.slice().sort((a,b)=>b.o.ts-a.o.ts).slice(0,6).map(q=>{
+    const rg=regs().filter(p=>p.date===q.o.date).pop(),raw=val(q.o,q.ser.f,q.ser.k),r0=rg?val(rg,q.ser.f,q.ser.k):undefined;
+    return `<div class="thist"><span><b>${esc(dLabel(q.o))}</b> · ${esc(q.ser.label)}${q.o.valid?' · '+esc(q.o.valid):''}</span><span class="${r0!==undefined&&raw!==r0?(raw>r0?'up':'down'):''}"><b>₹${fmt(raw)}</b>${r0!==undefined&&raw!==r0?` (${raw>r0?'+':'-'}${fmt(Math.abs(raw-r0))} vs regular)`:''}</span></div>`}).join('');
+  return head+summary+(offRows?`<div class="th">Limited offers (orange dots)</div>${offRows}`:'');
 }
 function wireChart(){
-  const svg=$('#tSvg',ov);if(!svg)return;
-  const f=+face,both=pcs==='both',prim=both?'p1':pcs;
-  const sers=both?['p1','p5']:[pcs];
-  const all=regs().filter(p=>sers.some(k=>val(p,face,k)!==undefined)),list=inRange(all);
-  const n=list.length,x=i=>n===1?(44+340-10)/2:44+(340-44-10)*i/(n-1);
+  const svg=$('#tSvg',ov);if(!svg||!G)return;
+  const {list,sers,xs,show}=G,n=list.length;
   const cur=$('#tCur',ov),tip=$('#tTip',ov),base=tip.innerHTML;
-  const sh=(p,k)=>{const v=val(p,face,k);return v===undefined?'–':metric==='pct'?pctTxt(profit(v,f)):'₹'+fmt(v)};
   const move=e=>{
     const r=svg.getBoundingClientRect(),px=(e.clientX-r.left)/r.width*340;
-    let bi=0,bd=1e9;for(let i=0;i<n;i++){const d=Math.abs(x(i)-px);if(d<bd){bd=d;bi=i}}
-    const p=list[bi];cur.setAttribute('x1',x(bi));cur.setAttribute('x2',x(bi));
-    tip.textContent=`${dFull(p)} · ${both?'1 pc '+sh(p,'p1')+' · 5 pcs '+sh(p,'p5'):sh(p,prim)}`;
+    let bi=0,bd=1e9;for(let i=0;i<n;i++){const d=Math.abs(xs[i]-px);if(d<bd){bd=d;bi=i}}
+    const p=list[bi];cur.setAttribute('x1',xs[bi]);cur.setAttribute('x2',xs[bi]);
+    const chips=sers.map(sr=>{const v=sr.get(p);return v===undefined?'':`<span class="tc"><i style="background:${sr.color}"></i>${sers.length>1?esc(sr.label)+' ':''}${show(v)}</span>`}).join('');
+    tip.innerHTML=`${esc(dFull(p))} ${chips}`;
   };
   svg.addEventListener('pointermove',move);svg.addEventListener('pointerdown',move);
   svg.addEventListener('pointerleave',()=>{cur.setAttribute('x1',-9);cur.setAttribute('x2',-9);tip.innerHTML=base});
@@ -284,9 +299,9 @@ function wire(){
   ov.querySelectorAll('#tTabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render();body.scrollTop=0;ov.querySelector('.modal').scrollTop=0});
   const on=(sel,fn)=>body.querySelectorAll(sel).forEach(fn);
   on('[data-nav]',b=>b.onclick=()=>{const ds=regDates(),i=ds.indexOf(selDate)+ +b.dataset.nav;if(ds[i]){selDate=ds[i];render()}});
-  on('#tFace [data-f]',b=>b.onclick=()=>{face=b.dataset.f;render()});
-  on('[data-p]',b=>b.onclick=()=>{pcs=b.dataset.p;render()});
-  on('[data-m]',b=>b.onclick=()=>{metric=b.dataset.m;render()});
+  on('#tFace [data-f]',b=>b.onclick=()=>{const f=b.dataset.f;if(gFaces.has(f)){if(gFaces.size>1)gFaces.delete(f)}else gFaces.add(f);render()});
+  on('[data-p]',b=>b.onclick=()=>{const k=b.dataset.p;if(gPcs.has(k)){if(gPcs.size>1)gPcs.delete(k)}else gPcs.add(k);render()});
+  on('#tPct',b=>b.onclick=()=>{pct=!pct;render()});
   on('[data-r]',b=>b.onclick=()=>{range=+b.dataset.r;render()});
   on('[data-dp]',b=>b.onclick=()=>{dbp=b.dataset.dp;render()});
   on('#tMonth',s=>s.onchange=()=>{dbMonth=s.value;render()});

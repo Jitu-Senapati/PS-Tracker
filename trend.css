@@ -131,3 +131,20 @@
 @keyframes pwspin{to{transform:rotate(360deg)}}
 @keyframes pwpulse{50%{opacity:.3}}
 @media(prefers-reduced-motion:reduce){#powerBtn.load::after,#powerBtn.load svg{animation-duration:2.4s}}
+/* graph switches: denominations and 1pc/5pcs glow when on; several can be on at once */
+.tt button.sw{display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:all .25s var(--ease)}
+.tt button.sw i{width:8px;height:8px;border-radius:50%;background:var(--c,var(--acc));opacity:.3;transition:all .25s var(--ease)}
+.tt button.sw.on{color:var(--c,var(--acc));border-color:var(--c,var(--acc));background:color-mix(in srgb,var(--c,var(--acc)) 14%,transparent);box-shadow:0 0 14px -3px var(--c,var(--acc)),inset 0 0 10px -6px var(--c,var(--acc))}
+.tt button.sw.on i{opacity:1;box-shadow:0 0 8px var(--c,var(--acc))}
+.tt button.sw:not(.on){color:var(--mut)}
+.tsub .tc,.tc{display:inline-flex;align-items:center;gap:4px;margin:2px 8px 0 0;color:var(--ink);font-weight:600;white-space:nowrap}
+.tc i{width:8px;height:8px;border-radius:50%}
+.tsub{line-height:1.7}
+.tbl.gt{font-size:.78rem}
+.tbl.gt th,.tbl.gt td{padding:8px 4px}
+.tbl.gt thead th{text-align:right}.tbl.gt thead th:first-child{text-align:left;padding-left:8px}
+.tbl.gt tbody th{display:table-cell;white-space:nowrap}
+.tbl.gt .c{display:inline;font-style:normal;font-size:.74rem;font-weight:650;color:var(--mut)}
+.tbl.gt .c.up{color:var(--acc)}.tbl.gt .c.down{color:var(--red)}
+.ld{display:inline-block;width:14px;height:0;border-top:3px solid var(--c);border-radius:2px;margin-right:6px;vertical-align:middle}
+.ld.dash{border-top-style:dashed}
