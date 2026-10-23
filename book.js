@@ -41,7 +41,7 @@ let baseNote='';
 function setNote(t){const p=document.querySelector('#bkT')&&document.querySelector('#bkT').nextElementSibling;if(!p)return;if(!baseNote)baseNote=p.textContent;p.textContent=t?baseNote+' \u00b7 '+t:baseNote}
 const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}};
 const sig=o=>JSON.stringify([o.people.map(p=>[p,Number((o.capital||{})[p])||0]),[...o.entries].sort((a,b)=>a.id<b.id?-1:1)]);
-const fixStatus=o=>{let n=0;o.entries.forEach(e=>{if(e.status==='Earned'){e.status='Completed';n++}});return n};
+function fixStatus(o){let n=0;o.entries.forEach(e=>{if(e.status==='Earned'){e.status='Completed';n++}});return n}
 async function pull(){
   if(pushing||G||(typeof hold!=='undefined'&&!hold.hidden)||(typeof entry!=='undefined'&&entry&&!entry.hidden))return;
   try{const d=await api('GET',''),next={people:d.people,capital:d.capital||{},entries:d.entries},raw=JSON.stringify(next),fixed=fixStatus(next);
@@ -108,6 +108,8 @@ const ALL='__all__';
 const dk=e=>e.purAt||e.buyAt||'';
 const cmp=(a,b)=>{const x=a.o!=null,y=b.o!=null;if(x&&y)return a.o-b.o||(a.id<b.id?-1:1);if(x!==y)return x?1:-1;return dk(b).localeCompare(dk(a))||(a.id<b.id?-1:1)};
 const profitOf=e=>e.sell!=null?e.sell-e.buy:null;
+/* money is back with us: completed, or a refund that has been received */
+const settled=e=>e.status==='Completed'||(e.status==='Refund'&&e.sell!=null);
 const DEN=['1k','2k','3k','4k','5k'];
 let lastKey='';
 function countUp(){
@@ -127,25 +129,26 @@ function renderBook(){
     `<button class="bk-tab bk-plus" data-a="newuser" aria-label="Add user" title="Add user">${ic.plus}</button>`;
   const es=store.entries.filter(e=>all||e.who===active).sort(cmp);
   const closed=es.filter(e=>e.sell!=null);
-  const invested=es.reduce((s,e)=>s+(e.status!=='Completed'?e.buy:0),0),returned=closed.filter(e=>e.status!=='Completed').reduce((s,e)=>s+e.sell,0),pout=es.filter(e=>e.status==='Completed'&&e.sell!=null).reduce((s,e)=>s+profitOf(e),0),net=closed.reduce((s,e)=>s+profitOf(e),0)-pout;
+  const invested=es.reduce((s,e)=>s+(!settled(e)?e.buy:0),0),returned=closed.filter(e=>!settled(e)).reduce((s,e)=>s+e.sell,0),holding=es.reduce((s,e)=>s+(e.status==='Purchased'?e.buy:0),0),pout=es.filter(e=>settled(e)&&e.sell!=null).reduce((s,e)=>s+profitOf(e),0),net=closed.reduce((s,e)=>s+profitOf(e),0)-pout;
   const cap=all?store.people.reduce((n,p)=>n+(Number((store.capital||{})[p])||0),0):Number((store.capital||{})[active])||0,avail=cap-invested;
   $('.bk-bal',book).innerHTML=`<div><small>Capital</small><b>${cap>0?'₹'+fmt(cap):'—'}</b></div>
-    <div title="Profit of completed entries"><small>Profit out</small><b class="${pout>0?'up':pout<0?'down':''}">${money(pout)}</b></div>
-    <div title="Capital − invested (purchased + sold)"><small>Available</small><b class="${cap>0&&avail<0?'down':''}">${cap>0?(avail<0?'−':'')+'₹'+fmt(Math.abs(avail)):'—'}</b></div>`;
-  const key=active+'|'+invested+'|'+returned+'|'+net+'|'+es.length;
+    <div title="Profit of completed and refunded entries"><small>Profit out</small><b class="${pout>0?'up':pout<0?'down':''}">${money(pout)}</b></div>
+    <div title="Capital − invested (purchased + sold + refund pending)"><small>Available</small><b class="${cap>0&&avail<0?'down':''}">${cap>0?(avail<0?'−':'')+'₹'+fmt(Math.abs(avail)):'—'}</b></div>`;
+  const key=active+'|'+invested+'|'+returned+'|'+holding+'|'+net+'|'+es.length;
   const fresh=key!==lastKey;lastKey=key;
   $('.bk-sum',book).innerHTML=`<div class=\"bk-stat\"><small>Invested</small><b data-v=\"${invested}\" data-k=\"rs\">₹${fmt(invested)}</b></div>
     <div class=\"bk-stat\"><small>Returned</small><b data-v=\"${returned}\" data-k=\"rs\">₹${fmt(returned)}</b></div>
+    <div class=\"bk-stat\" title=\"Money still tied up in purchased entries\"><small>Holding</small><b data-v=\"${holding}\" data-k=\"rs\">₹${fmt(holding)}</b></div>
     <div class=\"bk-stat\"><small>Net profit</small><b class=\"${net>0?'up':net<0?'down':''}\" ${closed.length?`data-v=\"${net}\" data-k=\"pl\"`:''}>${closed.length?money(net):'—'}</b></div>`;
   if(fresh)countUp();
   $('.bk-list',book).innerHTML=es.length?es.map((e,i)=>{
-    const d=profitOf(e),tax=e.tax||0,codes=(e.d||[]).map((n,j)=>n>0?`${n}×${DEN[j]}`:'').filter(Boolean);
+    const d=profitOf(e),rf=e.status==='Refund',got=rf&&e.sell!=null,tax=e.tax||0,codes=(e.d||[]).map((n,j)=>n>0?`${n}×${DEN[j]}`:'').filter(Boolean);
     const extra=[e.plat?esc(e.plat):'',tax>0?`Tax ₹${fmt(tax)}`:'',codes.length?codes.join(' · '):''].filter(Boolean).join(' · ');
     return `<article class="bk-row${fresh?'':' still'}" data-id="${e.id}" style="animation-delay:${i*45}ms">
       <div class="bk-price">${all?`<span class="bk-who">${esc(e.who)}</span>`:''}${fmt(e.buy)} <span>→</span> ${e.sell!=null?fmt(e.sell):'—'}${extra?`<span class="bk-extra">${extra}</span>`:''}</div>
-      <div class="bk-pl ${d>0?'up':d<0?'down':''}">${d==null?'—':money(d)}<i>${d==null?'Holding':d>0?'Profit':d<0?'Loss':'Break-even'}</i></div>
-      <div class="bk-date">${e.purAt&&!e.buyAt?`<div class="bk-pur">Purchased ${dShort(e.purAt)}${relDay(e.purAt)}</div>`:''}${e.buyAt||e.sellAt?`${e.buyAt?dShort(e.buyAt)+relDay(e.buyAt):'—'} <span>→</span> ${e.sellAt?dShort(e.sellAt)+relDay(e.sellAt):'—'}`:''}</div>
-      <div class="bk-st"><span class="pill s-${e.status.toLowerCase()}">${e.status}</span></div></article>`}).join('')
+      <div class="bk-pl ${d>0?'up':d<0?'down':''}">${d==null?'—':money(d)}<i>${d==null?(rf?'Awaiting refund':'Holding'):d>0?'Profit':d<0?'Loss':(rf?'Refunded in full':'Break-even')}</i></div>
+      <div class="bk-date">${rf?`<div class="bk-pur">Debited ${dShort(e.purAt)}${relDay(e.purAt)}${got&&e.sellAt?` <span>→</span> Refunded ${dShort(e.sellAt)}${relDay(e.sellAt)}`:''}</div>`:''}${!rf&&e.purAt&&!e.buyAt?`<div class="bk-pur">Purchased ${dShort(e.purAt)}${relDay(e.purAt)}</div>`:''}${!rf&&(e.buyAt||e.sellAt)?`${e.buyAt?dShort(e.buyAt)+relDay(e.buyAt):'—'} <span>→</span> ${e.sellAt?dShort(e.sellAt)+relDay(e.sellAt):'—'}`:''}</div>
+      <div class="bk-st"><span class="pill ${rf?(got?'s-refunded':'s-refund'):'s-'+e.status.toLowerCase()}">${rf?(got?'Refunded':'Refund pending'):e.status}</span></div></article>`}).join('')
    :`<div class=\"bk-empty\"><b>No entries${all?'':' for '+esc(active)} yet</b><span>Tap “Add new entry” to record one.</span></div>`;
 }
 book.addEventListener('click',e=>{
@@ -352,7 +355,7 @@ const entry=mount(`<section class="modal bk-form" role="dialog" aria-modal="true
     <span class="bk-lb">Codes sent</span>
     <div class="bk-codes">${DEN.map((n,i)=>`<label><small>${n}</small><input class="bk-in" id="enD${i}" inputmode="numeric" placeholder="0"></label>`).join('')}</div>
     <span class="bk-lb">Status</span>
-    <div class="bk-seg" role="radiogroup">${['Purchased','Sold','Completed'].map(s=>`<button type="button" role="radio" data-s="${s}" data-ripple>${s}</button>`).join('')}</div>
+    <div class="bk-seg" role="radiogroup">${['Purchased','Sold','Completed','Refund'].map(s=>`<button type="button" role="radio" data-s="${s}" data-ripple>${s}</button>`).join('')}</div>
     <p class="bk-err" role="alert" hidden></p>
   </div>
   <div class="bk-two bk-act"><button class="btn bk-ghost" data-ripple data-x>Cancel</button><button class="btn bk-primary" data-ripple data-a="save">Add</button></div>
@@ -363,14 +366,17 @@ const platIcon=n=>{
   return `<span class="logo bk-lg"><span class="badge" style="background:#2b3a33">${esc((n.trim()[0]||'?').toUpperCase())}</span></span>`;
 };
 let f;
-const closedStatus=()=>f.status!=='Purchased';
+const closedStatus=()=>f.status==='Sold'||f.status==='Completed';
+const refundStatus=()=>f.status==='Refund';
 function syncForm(){
   $('#enPlat',entry).innerHTML=(f.plat?`${platIcon(f.plat)}<span class="bk-ddn">${esc(f.plat)}</span>`:'<span class="bk-ddn ph">Platform</span>')+ic.dn;
   entry.querySelectorAll('.bk-ddm [data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===(f.plat||'')));
-  $('[data-pick="purAt"]',entry).innerHTML=`${ic.cal}<span class="${f.purAt?'':'ph'}">${f.purAt?dFull(f.purAt):'Purchased date'}</span>`;
-  $('[data-pick="buyAt"]',entry).innerHTML=`${ic.cal}<span class="${f.buyAt?'':'ph'}">${f.buyAt?dFull(f.buyAt):'Send date'}</span>`;
-  $('[data-pick="sellAt"]',entry).innerHTML=`${ic.cal}<span class="${f.sellAt?'':'ph'}">${f.sellAt?dFull(f.sellAt):(closedStatus()?'Received date':'Received date (optional)')}</span>`;
-  $('#enSell',entry).disabled=!closedStatus();$('#enSell',entry).closest('.bk-money').classList.toggle('off',!closedStatus());
+  $('[data-pick="purAt"]',entry).innerHTML=`${ic.cal}<span class="${f.purAt?'':'ph'}">${f.purAt?dFull(f.purAt):(refundStatus()?'Debited date':'Purchased date')}</span>`;
+  $('[data-pick="buyAt"]',entry).innerHTML=`${ic.cal}<span class="${f.buyAt&&!refundStatus()?'':'ph'}">${refundStatus()?'Not needed':f.buyAt?dFull(f.buyAt):'Send date'}</span>`;
+  $('[data-pick="buyAt"]',entry).disabled=refundStatus();
+  entry.querySelectorAll('.bk-codes input').forEach(i=>i.disabled=refundStatus());$('.bk-codes',entry).classList.toggle('off',refundStatus());
+  $('[data-pick="sellAt"]',entry).innerHTML=`${ic.cal}<span class="${f.sellAt?'':'ph'}">${f.sellAt?dFull(f.sellAt):(refundStatus()?'Refund received date (optional)':closedStatus()?'Received date':'Received date (optional)')}</span>`;
+  {const on=closedStatus()||refundStatus();$('#enSell',entry).disabled=!on;$('#enSell',entry).placeholder=refundStatus()?'Refund amount':'Returning';$('#enSell',entry).closest('.bk-money').classList.toggle('off',!on)}
   entry.querySelectorAll('[data-s]').forEach(b=>{const on=b.dataset.s===f.status;b.classList.toggle('on',on);b.setAttribute('aria-checked',on)});
 }
 let editing=null;
@@ -409,12 +415,17 @@ function saveEntry(){
   const buy=parseFloat($('#enBuy',entry).value),sell=parseFloat($('#enSell',entry).value);
   if(!who)return err('Enter the investor’s name.');
   if(!(buy>0))return err('Enter the invested amount.');
-  if(!f.purAt)return err('Pick the purchased date.');
+  if(!f.purAt)return err(refundStatus()?'Pick the debited date.':'Pick the purchased date.');
+  if(refundStatus()){
+    if(!f.sellAt&&!isNaN(sell))return err('Pick the refund received date.');
+    if(f.sellAt&&!isNaN(sell)&&!(sell>=0))return err('Enter a valid refund amount.');
+  }
   if(closedStatus()){
     if(!f.sellAt)return err('Pick the received date.');
     if(!(sell>=0))return err('Enter the returning amount.');
   }
   const d10=v=>String(v).slice(0,10);
+  if(refundStatus()){f.buyAt='';if(f.sellAt&&d10(f.sellAt)<d10(f.purAt))return err('Refund date can’t be before the debited date.')}
   if(f.buyAt&&d10(f.buyAt)<d10(f.purAt))return err('Codes can’t be sent before they were purchased.');
   if(closedStatus()){
     if(d10(f.sellAt)<d10(f.purAt))return err('Received date can’t be before the purchased date.');
@@ -425,7 +436,7 @@ function saveEntry(){
   const d=DEN.map((n,i)=>Math.max(0,parseInt($('#enD'+i,entry).value,10)||0));
   const known=store.people.find(p=>p.toLowerCase()===who.toLowerCase());
   if(known)who=known;else store.people.push(who);
-  const o={who,plat:f.plat||null,purAt:f.purAt,buyAt:f.buyAt||null,sellAt:closedStatus()?f.sellAt:null,buy,sell:closedStatus()?sell:null,tax,d,status:f.status};
+  const o={who,plat:f.plat||null,purAt:f.purAt,buyAt:refundStatus()?null:(f.buyAt||null),sellAt:(closedStatus()||(refundStatus()&&f.sellAt))?f.sellAt:null,buy,sell:closedStatus()?sell:(refundStatus()&&f.sellAt?(isNaN(sell)?buy:sell):null),tax,d:refundStatus()?DEN.map(()=>0):d,status:f.status};
   editing?Object.assign(editing,o):store.entries.push({id:uid(),...o});
   save();if(active!==ALL)active=who;renderBook();close(entry);
 }

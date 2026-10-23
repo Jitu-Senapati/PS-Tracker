@@ -7,7 +7,7 @@
 .bk-tab{position:relative;flex:none;padding:10px 14px;border:0;background:none;color:var(--mut);font:inherit;font-weight:600;cursor:pointer;transition:color .2s}
 .bk-tab:hover,.bk-tab.on{color:var(--ink)}
 .bk-tab.on::after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;border-radius:2px;background:var(--acc)}
-.bk-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:16px 20px 6px}
+.bk-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:16px 16px 6px}
 .bk-stat{background:var(--raise);border:1px solid var(--stroke);border-radius:14px;padding:10px 12px;min-width:0}
 .bk-stat small{display:block;color:var(--mut);font-size:.7rem;margin-bottom:3px}
 .bk-stat b{font-size:.98rem;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -48,7 +48,7 @@
 .bk-money{position:relative;display:block;transition:opacity .2s}
 .bk-money b{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--mut);font-weight:600}
 .bk-money .bk-in{padding-left:30px}.bk-money.off{opacity:.4}
-.bk-seg{display:grid;grid-template-columns:repeat(3,1fr);padding:4px;gap:4px;border-radius:14px;background:var(--raise);border:1px solid var(--stroke)}
+.bk-seg{display:grid;grid-template-columns:repeat(4,1fr);padding:4px;gap:4px;border-radius:14px;background:var(--raise);border:1px solid var(--stroke)}
 .bk-seg button{position:relative;overflow:hidden;height:40px;border:0;border-radius:10px;background:none;color:var(--mut);font:inherit;font-weight:600;cursor:pointer;transition:background .25s,color .25s}
 .bk-seg button.on{background:var(--acc-soft);color:var(--acc)}
 .bk-err{margin:6px 0 0;color:var(--red);font-size:.82rem}
@@ -211,3 +211,15 @@ select.bk-in option{background:var(--surface);color:var(--ink)}
 .bk-form .bk-primary,.bk-form .bk-ghost{height:3em;border-radius:.9em;font-size:1em}
 .bk-form .bk-err{margin:.2em 0 0;font-size:.82em}
 .bk-form .bk-ddm{top:auto;bottom:calc(100% + .4em);max-height:min(248px,42vh)}
+
+/* Refund status: money was debited, refund comes back after some days */
+.s-refund{color:#8fb4ff;background:rgba(143,180,255,.13)}
+.s-refunded{color:#06121f;background:#8fb4ff}
+.bk-seg button{font-size:.8rem;padding:0 2px}
+.bk-form .bk-seg button{font-size:.82em}
+.bk-codes.off{opacity:.4}
+
+/* four summary cards fit side by side */
+.bk-sum .bk-stat{padding:10px 9px}
+.bk-sum .bk-stat small{font-size:.66rem}
+.bk-sum .bk-stat b{font-size:.88rem}
