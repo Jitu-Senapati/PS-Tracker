@@ -157,3 +157,11 @@
 .tsw i{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--mut);transition:all .25s var(--ease)}
 .tsw.on{border-color:#f0b429;background:rgba(240,180,41,.18)}
 .tsw.on i{left:20px;background:#f0b429;box-shadow:0 0 10px #f0b429}
+/* price drops (red) next to special offers (orange) */
+.tchart .od.dr{fill:#ff6b6b}
+.toffh.dr{color:var(--red)}
+.tw-drop{border-color:rgba(255,107,107,.4)}
+.tw-drop thead th{color:var(--red)}
+.tbl.db tr.drop th,.tbl.db tr.drop td{background:rgba(255,107,107,.08)}
+.tbl.db tr.drop th small{color:var(--red)}
+.cd u.dr{right:auto;left:4px;background:var(--red)}

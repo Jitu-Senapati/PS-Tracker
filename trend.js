@@ -26,6 +26,8 @@ function psRates(lines){
   return rates;
 }
 const HEAD=/Price\s*Update\s*(\d{1,2})\s*([A-Za-z]{3,9})(?:\s*(\d{4}))?\s*Valid\s*(\d{1,2}:\d{2}\s*[AP]M)?\s*(?:\(\s*([^)]*?)\s*\))?/i;
+const DROPLINE=/Price\s*Down\s*Time/i;
+const DROPWIN=/Price\s*Down\s*Time\W*(\d{1,2}:\d{2}\s*[AP]M)\s*to\s*(\d{1,2}:\d{2}\s*[AP]M)/i;
 const OFFER_LINE=/^[^A-Za-z0-9]*offer[^A-Za-z0-9]*$/i;
 const WINDOW=/\(\s*(\d{1,2}:\d{2}\s*[AP]M)\s*To\s*(\d{1,2}:\d{2}\s*[AP]M)\s*\)/i;
 const hm=(t,def)=>{const v=t&&t.match(/(\d{1,2}):(\d{2})\s*([AP])M/i);return v?[+v[1]%12+(v[3].toUpperCase()==='P'?12:0),+v[2]]:def};
@@ -42,9 +44,12 @@ function parseAll(text,fallbackDate,now=new Date()){
   }
   const recs=[],warn=[];let last=null,needDate=false;
   for(const sg of segs){
-    let reg=sg.lines,off=[];
-    const oi=sg.lines.findIndex(l=>OFFER_LINE.test(l));
-    if(oi>=0){reg=sg.lines.slice(0,oi);off=sg.lines.slice(oi+1)}
+    let body=sg.lines,dropL=[];
+    const di=body.findIndex(l=>DROPLINE.test(l));
+    if(di>=0){dropL=body.slice(di);body=body.slice(0,di)}
+    let reg=body,off=[];
+    const oi=body.findIndex(l=>OFFER_LINE.test(l));
+    if(oi>=0){reg=body.slice(0,oi);off=body.slice(oi+1)}
     if(sg.head==='bad'){warn.push('a "Price Update" line could not be read');continue}
     if(sg.head){
       const h=sg.head,month=MON.findIndex(m=>m.toLowerCase()===h[2].slice(0,3).toLowerCase());
@@ -72,6 +77,21 @@ function parseAll(text,fallbackDate,now=new Date()){
       let id=d.date+'|offer-'+pad(hh)+pad(mm);
       while(recs.some(r=>r.id===id))id+='b';
       recs.push({id,date:d.date,ts:istTs(d.y,d.month,d.d,hh,mm),session:'Offer',valid:win,offer:true,rates:orates});
+    }
+    // "Price Down Time: 4:10 PM to 11:59 PM" messages: a lower rate for the rest of the day
+    const drates=psRates(dropL);
+    if(Object.keys(drates).length){
+      let d=last;
+      if(!d){
+        const f=String(fallbackDate||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);needDate=true;
+        if(!f){warn.push('a price drop has no date');continue}
+        d={y:+f[1],month:+f[2]-1,d:+f[3],date:fallbackDate};
+      }
+      const w=dropL.join('\n').match(DROPWIN),[hh,mm]=hm(w&&w[1],[12,0]);
+      const win=w?w[1].replace(/\s+/g,'')+' - '+w[2].replace(/\s+/g,''):null;
+      let id=d.date+'|drop-'+pad(hh)+pad(mm);
+      while(recs.some(r=>r.id===id))id+='b';
+      recs.push({id,date:d.date,ts:istTs(d.y,d.month,d.d,hh,mm),session:'Price drop',valid:win,drop:true,rates:drates});
     }
   }
   return {records:recs,warnings:warn,needDate};
@@ -109,7 +129,8 @@ document.body.appendChild(ov);
 const body=$('#tBody',ov);
 
 /* ---------- data helpers ---------- */
-const regs=()=>prices.filter(p=>!p.offer);
+const isSp=p=>p.offer||p.drop;
+const regs=()=>prices.filter(p=>!isSp(p));
 const val=(p,f,k)=>p.rates[f]?p.rates[f][k]:undefined;
 const faces=()=>{const s=new Set();regs().forEach(p=>Object.keys(p.rates).forEach(k=>s.add(k)));return [...s].sort((a,b)=>a-b)};
 const regDates=()=>[...new Set(regs().map(p=>p.date))].sort();
@@ -136,7 +157,7 @@ function todayHtml(){
   if(!ds.length)return `<div class="tnone">No prices saved yet.<br>Tap “+ Add data” to paste your WhatsApp price updates.</div>`;
   if(!selDate)selDate=ds[ds.length-1];
   const latest=ds[ds.length-1],i=ds.indexOf(selDate),rec=dayRec(selDate),fs=faces();
-  const offs=prices.filter(o=>o.offer&&o.date===selDate);
+  const offs=prices.filter(o=>isSp(o)&&o.date===selDate).sort((a,b)=>a.ts-b.ts);
   const nav=`<div class="tdh"><button data-nav="-1" ${i<=0?'disabled':''} aria-label="Previous day">‹</button>
     <div><b>${selDate===latest?'Latest · ':''}${dayLong(selDate)}</b><span>${rec?esc(rec.session||'')+(rec.valid?' · valid '+esc(rec.valid):''):'no regular update this day'}</span></div>
     <button data-nav="1" ${i<0||i>=ds.length-1?'disabled':''} aria-label="Next day">›</button></div>`;
@@ -146,10 +167,10 @@ function todayHtml(){
   const offCell=(o,f,k)=>{
     const v=o.rates[f]?o.rates[f][k]:undefined;if(v===undefined)return '<td class="n">–</td><td class="pf">–</td>';
     const rg=dayVal(selDate,f,k),c=rg===undefined?null:chg(v,rg),p=profit(v,f);
-    return `<td class="n"><b>₹${fmt(v)}</b><i class="c ${c?chgCls(c):''}">${c?(c.d===0?'same as regular':(c.d>0?'▲ +':'▼ −')+fmt(Math.abs(c.d))):'offer'}</i></td><td class="pf ${p>=0?'up':'down'}">${pctTxt(p)}</td>`;
+    return `<td class="n"><b>₹${fmt(v)}</b><i class="c ${c?chgCls(c):''}">${c?(c.d===0?'same as regular':(c.d>0?'▲ +':'▼ −')+fmt(Math.abs(c.d))):(o.drop?'drop':'offer')}</i></td><td class="pf ${p>=0?'up':'down'}">${pctTxt(p)}</td>`;
   };
-  const offHtml=offs.map(o=>`<div class="toffh">Special offer${o.valid?' · '+esc(o.valid):''}</div>
-    <div class="twrap tw-off"><table class="tbl tday"><colgroup><col style="width:18%"><col style="width:23%"><col style="width:18%"><col style="width:23%"><col style="width:18%"></colgroup><thead><tr><th>Amount</th><th colspan="2">1 pc min</th><th colspan="2">5 pcs min</th></tr></thead><tbody>${Object.keys(o.rates).sort((x,y)=>x-y).map(f=>`<tr><th>₹${fmt(f)}</th>${offCell(o,f,'p1')}${offCell(o,f,'p5')}</tr>`).join('')}</tbody></table></div>`).join('')+(offs.length?'<p class="tfoot">Offer change is compared with that day’s regular rate.</p>':'');
+  const offHtml=offs.map(o=>`<div class="toffh ${o.drop?'dr':''}">${o.drop?'Price drop':'Special offer'}${o.valid?' · '+esc(o.valid):''}</div>
+    <div class="twrap ${o.drop?'tw-drop':'tw-off'}"><table class="tbl tday"><colgroup><col style="width:18%"><col style="width:23%"><col style="width:18%"><col style="width:23%"><col style="width:18%"></colgroup><thead><tr><th>Amount</th><th colspan="2">1 pc min</th><th colspan="2">5 pcs min</th></tr></thead><tbody>${Object.keys(o.rates).sort((x,y)=>x-y).map(f=>`<tr><th>₹${fmt(f)}</th>${offCell(o,f,'p1')}${offCell(o,f,'p5')}</tr>`).join('')}</tbody></table></div>`).join('')+(offs.length?'<p class="tfoot">Offer and price-drop changes are compared with that day’s regular rate.</p>':'');
   return nav+table+offHtml;
 }
 
@@ -185,7 +206,7 @@ function chartSvg(list,sers,offs,axis){
     }
     if(pts.length<=24)dots+=pts.map(p=>`<circle class="dt" style="fill:${sr.color}" cx="${p[0]}" cy="${p[1]}" r="2.6"/>`).join('');
   });
-  const od=offs.map(q=>`<circle class="od" style="stroke:${q.ser.color}" cx="${xT(q.o.ts)}" cy="${y(q.v)}" r="3.8"><title>${esc(dFull(q.o))} ${esc(q.ser.label)} ${axis(q.v)}</title></circle>`).join('');
+  const od=offs.map(q=>`<circle class="od ${q.o.drop?'dr':''}" style="stroke:${q.ser.color}" cx="${xT(q.o.ts)}" cy="${y(q.v)}" r="3.8"><title>${esc(dFull(q.o))} ${esc(q.ser.label)} ${axis(q.v)}</title></circle>`).join('');
   const lab=(i,a)=>`<text x="${x(i)}" y="${H-6}" text-anchor="${a}">${dLabel(list[i])}</text>`;
   const c0=sers[0].color;
   return {xs:list.map((_,i)=>x(i)),svg:`<svg viewBox="0 0 ${W} ${H}" id="tSvg"><defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c0}" stop-opacity=".28"/><stop offset="1" stop-color="${c0}" stop-opacity="0"/></linearGradient></defs>${g}${area}${lines}${dots}${od}${n>1?lab(0,'start')+lab(n-1,'end'):lab(0,'middle')}<line id="tCur" class="cur" y1="${T}" y2="${H-B}" x1="-9" x2="-9"/></svg>`};
@@ -212,7 +233,7 @@ function graphHtml(){
       hiP:vs[vv.indexOf(Math.max(...vv))],loP:vs[vv.indexOf(Math.min(...vv))]};
   }).filter(x=>x.cur!==undefined);
   const offsAll=[];
-  sers.forEach(sr=>prices.forEach(o=>{if(o.offer&&val(o,sr.f,sr.k)!==undefined&&o.ts>=list[0].ts&&o.ts<=list[list.length-1].ts+864e5)offsAll.push({o,ser:sr,v:sr.get(o)})}));
+  sers.forEach(sr=>prices.forEach(o=>{if(isSp(o)&&val(o,sr.f,sr.k)!==undefined&&o.ts>=list[0].ts&&o.ts<=list[list.length-1].ts+864e5)offsAll.push({o,ser:sr,v:sr.get(o)})}));
   const offs=showOff?offsAll:[];
   const ch=chartSvg(list,sers,offs,axis);
   G={list,sers,xs:ch.xs,show};
@@ -232,9 +253,9 @@ function graphHtml(){
   }
   const offRows=offs.slice().sort((a,b)=>b.o.ts-a.o.ts).slice(0,6).map(q=>{
     const rg=regs().filter(p=>p.date===q.o.date).pop(),raw=val(q.o,q.ser.f,q.ser.k),r0=rg?val(rg,q.ser.f,q.ser.k):undefined;
-    return `<div class="thist"><span><b>${esc(dLabel(q.o))}</b> · ${esc(q.ser.label)}${q.o.valid?' · '+esc(q.o.valid):''}</span><span class="${r0!==undefined&&raw!==r0?(raw>r0?'up':'down'):''}"><b>₹${fmt(raw)}</b>${r0!==undefined&&raw!==r0?` (${raw>r0?'+':'-'}${fmt(Math.abs(raw-r0))} vs regular)`:''}</span></div>`}).join('');
-  const hasOff=offsAll.length>0;
-  return head+summary+(hasOff?`<div class="th thr"><span>Special offers</span><button id="tOff" class="tsw ${showOff?'on':''}" role="switch" aria-checked="${showOff}" aria-label="Show special offers on the graph"><i></i></button></div>${showOff?offRows:''}`:'');
+    return `<div class="thist"><span><b>${esc(dLabel(q.o))}</b> · ${esc(q.ser.label)}${q.o.drop?' · drop':''}${q.o.valid?' · '+esc(q.o.valid):''}</span><span class="${r0!==undefined&&raw!==r0?(raw>r0?'up':'down'):''}"><b>₹${fmt(raw)}</b>${r0!==undefined&&raw!==r0?` (${raw>r0?'+':'-'}${fmt(Math.abs(raw-r0))} vs regular)`:''}</span></div>`}).join('');
+  const hasOff=offsAll.length>0,hasDrop=offsAll.some(q=>q.o.drop),hasOffer=offsAll.some(q=>q.o.offer),offTitle=hasDrop&&hasOffer?'Special offers & price drops':hasDrop?'Price drops':'Special offers';
+  return head+summary+(hasOff?`<div class="th thr"><span>${offTitle}</span><button id="tOff" class="tsw ${showOff?'on':''}" role="switch" aria-checked="${showOff}" aria-label="Show ${offTitle.toLowerCase()} on the graph"><i></i></button></div>${showOff?offRows:''}`:'');
 }
 function wireChart(){
   const svg=$('#tSvg',ov);if(!svg||!G)return;
@@ -259,33 +280,33 @@ function dataHtml(){
   const ctl=`<div class="tt"><button data-dp="p1" class="${dbp==='p1'?'on':''}">1 pc</button><button data-dp="p5" class="${dbp==='p5'?'on':''}">5 pcs</button><span class="gap"></span>
     <select id="tMonth"><option value="all">All months</option>${months.map(m=>`<option value="${m}" ${m===dbMonth?'selected':''}>${mlab(m)}</option>`).join('')}</select>
     <button id="tCsv">CSV</button><button id="tExpand" class="xp" aria-label="${ov.classList.contains('full')?'Collapse':'Expand'}" title="${ov.classList.contains('full')?'Collapse':'Expand'}">${ov.classList.contains('full')?'⤡':'⤢'}</button></div>`;
-  const tbl=rows.length?`<div class="twrap"><table class="tbl db"><thead><tr><th>Date</th>${fs.map(f=>`<th>₹${fmt(f)}</th>`).join('')}<th></th></tr></thead><tbody>${rows.map(p=>`<tr class="${p.offer?'off':''}"><th><b>${esc(dLabel(p))}</b><small>${esc(p.session||'')}${p.valid&&p.offer?' '+esc(p.valid):''}</small></th>${fs.map(f=>{const v=val(p,f,dbp);return `<td class="n">${v===undefined?'–':'₹'+fmt(v)}</td>`}).join('')}<td><button class="del" data-del="${esc(p.id)}" aria-label="Delete">×</button></td></tr>`).join('')}</tbody></table></div>
-    <p class="tfoot">${rows.length} saved · orange rows are special offers. Tap × to delete a wrong entry.</p>`:`<div class="tnone">Nothing saved${dbMonth==='all'?' yet':' for this month'}.</div>`;
+  const tbl=rows.length?`<div class="twrap"><table class="tbl db"><thead><tr><th>Date</th>${fs.map(f=>`<th>₹${fmt(f)}</th>`).join('')}<th></th></tr></thead><tbody>${rows.map(p=>`<tr class="${p.offer?'off':p.drop?'drop':''}"><th><b>${esc(dLabel(p))}</b><small>${esc(p.session||'')}${p.valid&&isSp(p)?' '+esc(p.valid):''}</small></th>${fs.map(f=>{const v=val(p,f,dbp);return `<td class="n">${v===undefined?'–':'₹'+fmt(v)}</td>`}).join('')}<td><button class="del" data-del="${esc(p.id)}" aria-label="Delete">×</button></td></tr>`).join('')}</tbody></table></div>
+    <p class="tfoot">${rows.length} saved · orange rows are special offers, red rows are price drops. Tap × to delete a wrong entry.</p>`:`<div class="tnone">Nothing saved${dbMonth==='all'?' yet':' for this month'}.</div>`;
   return (prices.length?ctl:'')+tbl+`<div class="tadd"><button class="ghost" id="tAddIn">+ Add data</button></div>`;
 }
 function csv(){
   const fs=faces(),q=v=>v===undefined?'':v;
   const lines=[['Date','Session','Valid','Type',...fs.flatMap(f=>[f+' 1pc',f+' 5pcs'])].join(',')];
-  prices.forEach(p=>lines.push([p.date,p.session||'',p.valid||'',p.offer?'offer':'regular',...fs.flatMap(f=>[q(val(p,f,'p1')),q(val(p,f,'p5'))])].map(c=>/[",]/.test(c)?'"'+String(c).replace(/"/g,'""')+'"':c).join(',')));
+  prices.forEach(p=>lines.push([p.date,p.session||'',p.valid||'',p.offer?'offer':p.drop?'drop':'regular',...fs.flatMap(f=>[q(val(p,f,'p1')),q(val(p,f,'p5'))])].map(c=>/[",]/.test(c)?'"'+String(c).replace(/"/g,'""')+'"':c).join(',')));
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));a.download='ps-prices.csv';document.body.appendChild(a);a.click();a.remove();
 }
 
 /* ---------- tab 4: calendar ---------- */
 function calHtml(){
   const dow=(new Date(Date.UTC(calY,calM,1)).getUTCDay()+6)%7,dim=new Date(Date.UTC(calY,calM+1,0)).getUTCDate(),today=todayStr();
-  const ds=new Set(regDates()),offD=new Set(prices.filter(p=>p.offer).map(p=>p.date)),fs=faces(),ref=fs.includes('1000')?'1000':fs[0];
+  const ds=new Set(regDates()),offD=new Set(prices.filter(p=>p.offer).map(p=>p.date)),dropD=new Set(prices.filter(p=>p.drop).map(p=>p.date)),fs=faces(),ref=fs.includes('1000')?'1000':fs[0];
   let cells='';
   for(let i=0;i<dow;i++)cells+='<span class="cd empty"></span>';
   for(let d=1;d<=dim;d++){
-    const k=`${calY}-${pad(calM+1)}-${pad(d)}`,has=ds.has(k),o=offD.has(k);
+    const k=`${calY}-${pad(calM+1)}-${pad(d)}`,has=ds.has(k),o=offD.has(k),dr=dropD.has(k);
     let sub='',cls='';
     if(has&&ref){const v=dayVal(k,ref,'p1'),pv=prevVal(k,ref,'p1');if(v!==undefined){sub=fmt(v);if(pv!==undefined&&v!==pv)cls=v>pv?'up':'down'}}
-    cells+=`<button class="cd ${has||o?'has':''} ${cls} ${k===today?'today':''} ${k===selDate?'sel':''}" ${has||o?`data-d="${k}"`:'disabled'}><b>${d}</b><i>${sub}</i>${o?'<u></u>':''}</button>`;
+    cells+=`<button class="cd ${has||o||dr?'has':''} ${cls} ${k===today?'today':''} ${k===selDate?'sel':''}" ${has||o||dr?`data-d="${k}"`:'disabled'}><b>${d}</b><i>${sub}</i>${o?'<u></u>':''}${dr?'<u class="dr"></u>':''}</button>`;
   }
   const inMonth=[...ds].filter(x=>x.startsWith(`${calY}-${pad(calM+1)}`)).length;
   return `<div class="cnav"><button data-cm="-1" aria-label="Previous month">‹</button><b>${MON[calM]} ${calY}</b><button data-cm="1" aria-label="Next month">›</button></div>
   <div class="cgrid"><span class="cdw">Mon</span><span class="cdw">Tue</span><span class="cdw">Wed</span><span class="cdw">Thu</span><span class="cdw">Fri</span><span class="cdw">Sat</span><span class="cdw">Sun</span>${cells}</div>
-  <p class="tfoot">${inMonth} day${inMonth===1?'':'s'} with prices this month. Small number = ₹${ref?fmt(ref):''} 1 pc rate, green/red = up/down vs previous day, orange dot = special offer. Tap a day to open its price chart.</p>`;
+  <p class="tfoot">${inMonth} day${inMonth===1?'':'s'} with prices this month. Small number = ₹${ref?fmt(ref):''} 1 pc rate, green/red = up/down vs previous day, orange dot = special offer, red dot = price drop. Tap a day to open its price chart.</p>`;
 }
 
 /* ---------- render ---------- */
@@ -315,7 +336,7 @@ function wire(){
   on('[data-d]',b=>b.onclick=()=>{selDate=b.dataset.d;tab='today';render();ov.querySelector('.modal').scrollTop=0});
   on('[data-del]',b=>b.onclick=()=>{
     const id=b.dataset.del,p=prices.find(x=>x.id===id);if(!p)return;
-    askDelete(p.offer?'Delete this offer?':'Delete this update?',`${dFull(p)}${p.offer&&p.valid?' · '+p.valid:''}. This can’t be undone.`,async()=>{
+    askDelete(p.offer?'Delete this offer?':p.drop?'Delete this price drop?':'Delete this update?',`${dFull(p)}${isSp(p)&&p.valid?' · '+p.valid:''}. This can’t be undone.`,async()=>{
       try{await api('DELETE','/prices/'+encodeURIComponent(id));prices=prices.filter(x=>x.id!==id);writeCache(prices);note='deleted'}
       catch(e){note=e.message==='auth'?'wrong passcode - delete failed':'could not delete (offline?)'}
       render();
@@ -330,7 +351,7 @@ addOv.innerHTML=`<section class="modal" role="dialog" aria-modal="true" aria-lab
   <div class="mhead"><div><h2 id="tAddT">Add price data</h2><p>Paste one or many WhatsApp price messages, oldest first</p></div>
   <button id="tAddX" class="btn icon sm" data-ripple aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
   <div class="tadd"><textarea id="tText" placeholder="Paste the WhatsApp price message(s) here" spellcheck="false"></textarea>
-  <label class="tdate" id="tDateRow" hidden>Date for the offer (its message has no date) <input type="date" id="tDate"></label>
+  <label class="tdate" id="tDateRow" hidden>Date for the offer / price drop (its message has no date) <input type="date" id="tDate"></label>
   <div class="tprev" id="tPrev"></div><button class="go" id="tSave" disabled>Save</button></div></section>`;
 document.body.appendChild(addOv);
 {
@@ -342,10 +363,10 @@ document.body.appendChild(addOv);
     dr.hidden=!r.needDate;
     const recs=r.records,warn=r.warnings.length?' · skipped: '+r.warnings.join('; '):'';
     if(!recs.length){pv.className='tprev bad';pv.textContent='No PlayStation rates found in this text.'+warn;return}
-    const reg=recs.filter(x=>!x.offer),off=recs.length-reg.length,amts=new Set();recs.forEach(x=>Object.keys(x.rates).forEach(k=>amts.add(k)));
+    const reg=recs.filter(x=>!isSp(x)),off=recs.filter(x=>x.offer).length,drp=recs.filter(x=>x.drop).length,amts=new Set();recs.forEach(x=>Object.keys(x.rates).forEach(k=>amts.add(k)));
     const ds=recs.map(x=>x.date).sort(),old=recs.filter(x=>prices.some(p=>p.id===x.id)).length;
     pv.className='tprev ok';
-    pv.textContent=`${reg.length} update${reg.length===1?'':'s'}${off?` + ${off} offer${off>1?'s':''}`:''} · ${amts.size} amount${amts.size===1?'':'s'} · ${dLabel({date:ds[0]})}${ds[0]!==ds[ds.length-1]?' to '+dLabel({date:ds[ds.length-1]}):''}${old?` · ${old} will replace saved`:''}${warn}`;
+    pv.textContent=`${reg.length} update${reg.length===1?'':'s'}${off?` + ${off} offer${off>1?'s':''}`:''}${drp?` + ${drp} price drop${drp>1?'s':''}`:''} · ${amts.size} amount${amts.size===1?'':'s'} · ${dLabel({date:ds[0]})}${ds[0]!==ds[ds.length-1]?' to '+dLabel({date:ds[ds.length-1]}):''}${old?` · ${old} will replace saved`:''}${warn}`;
     res=r;sv.disabled=false;
   };
   ta.oninput=check;di.onchange=check;
