@@ -26,6 +26,15 @@ function psRates(lines){
   return rates;
 }
 const HEAD=/Price\s*Update\s*(\d{1,2})\s*([A-Za-z]{3,9})(?:\s*(\d{4}))?\s*Valid\s*(\d{1,2}:\d{2}\s*[AP]M)?\s*(?:\(\s*([^)]*?)\s*\))?/i;
+// "Available:- Paytm, Phonepay, ... Etc" line: the platforms where the PlayStation cards were available
+function availOf(lines){
+  for(const ln of lines){
+    const m=ln.match(/^\W*Available\s*:?\s*-*\s*(.+)$/i);if(!m)continue;
+    const items=m[1].split(/[,&\/]|\band\b/i).map(x=>x.replace(/\betc\.?\s*$/i,'').replace(/[^\p{L}\p{N} .+-]/gu,'').replace(/\s+/g,' ').trim()).filter(x=>x&&!/^etc\.?$/i.test(x));
+    if(items.length)return [...new Set(items)];
+  }
+  return null;
+}
 const DROPLINE=/Price\s*Down\s*Time/i;
 const DROPWIN=/Price\s*Down\s*Time\W*(\d{1,2}:\d{2}\s*[AP]M)\s*to\s*(\d{1,2}:\d{2}\s*[AP]M)/i;
 const OFFER_LINE=/^[^A-Za-z0-9]*offer[^A-Za-z0-9]*$/i;
@@ -61,7 +70,8 @@ function parseAll(text,fallbackDate,now=new Date()){
       if(!Object.keys(rates).length)warn.push(`${+h[1]} ${MON[month]}: no PlayStation rates found`);
       else{
         const [hh,mm]=hm(h[4],[12,0]),session=(h[5]||'').trim()||null,valid=(h[4]||'').replace(/\s+/g,' ').trim()||null;
-        recs.push({id:date+'|'+(session||valid||'update').toLowerCase().replace(/[^a-z0-9: ]/g,'').slice(0,30),date,ts:istTs(y,month,+h[1],hh,mm),session,valid,rates});
+        const av=availOf(reg);
+        recs.push({id:date+'|'+(session||valid||'update').toLowerCase().replace(/[^a-z0-9: ]/g,'').slice(0,30),date,ts:istTs(y,month,+h[1],hh,mm),session,valid,rates,...(av?{avail:av}:{})});
       }
     }
     const orates=psRates(off);
@@ -91,7 +101,7 @@ function parseAll(text,fallbackDate,now=new Date()){
       const win=w?w[1].replace(/\s+/g,'')+' - '+w[2].replace(/\s+/g,''):null;
       let id=d.date+'|drop-'+pad(hh)+pad(mm);
       while(recs.some(r=>r.id===id))id+='b';
-      recs.push({id,date:d.date,ts:istTs(d.y,d.month,d.d,hh,mm),session:'Price drop',valid:win,drop:true,rates:drates});
+      recs.push({id,date:d.date,ts:istTs(d.y,d.month,d.d,hh,mm),session:'Price drop',valid:win,drop:true,rates:drates,...(availOf(dropL)?{avail:availOf(dropL)}:{})});
     }
   }
   return {records:recs,warnings:warn,needDate};
@@ -114,7 +124,7 @@ const writeCache=l=>{try{localStorage.setItem(CACHE,JSON.stringify(l))}catch(e){
 
 /* ---------- state ---------- */
 let prices=readCache(),note='';
-let tab='today',selDate=null,gFaces=new Set(['1000']),gPcs=new Set(['p1']),pct=false,showOff=true,range=7,dbp='p1',dbMonth='all';
+let tab='today',selDate=null,gFaces=new Set(['1000']),gPcs=new Set(['p1']),pct=false,showOff=true,calOpen=false,avN=14,range=7,dbp='p1',dbMonth='all';
 const nowD=new Date();let calY=nowD.getFullYear(),calM=nowD.getMonth();
 
 /* ---------- overlay shell ---------- */
@@ -123,7 +133,7 @@ ov.id='tOverlay';ov.className='overlay';ov.hidden=true;
 ov.innerHTML=`<section class="modal" role="dialog" aria-modal="true" aria-labelledby="tTitle">
   <div class="mhead"><div><div class="ttl"><h2 id="tTitle">Price trend</h2><button id="tAddBtn" class="tbtn">+ Add data</button></div><p id="tNote">Buy rates from the WhatsApp price update</p></div>
   <button id="tClose" class="btn icon sm" data-ripple aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
-  <div class="ttabs" id="tTabs">${[['today','Today'],['graph','Graph'],['data','Database'],['cal','Calendar']].map(([k,l])=>`<button data-t="${k}">${l}</button>`).join('')}</div>
+  <div class="ttabs" id="tTabs">${[['today','Today'],['graph','Graph'],['data','Database'],['avail','Availability']].map(([k,l])=>`<button data-t="${k}">${l}</button>`).join('')}</div>
   <div id="tBody"></div></section>`;
 document.body.appendChild(ov);
 const body=$('#tBody',ov);
@@ -159,7 +169,7 @@ function todayHtml(){
   const latest=ds[ds.length-1],i=ds.indexOf(selDate),rec=dayRec(selDate),fs=faces();
   const offs=prices.filter(o=>isSp(o)&&o.date===selDate).sort((a,b)=>a.ts-b.ts);
   const nav=`<div class="tdh"><button data-nav="-1" ${i<=0?'disabled':''} aria-label="Previous day">‹</button>
-    <div><b>${selDate===latest?'Latest · ':''}${dayLong(selDate)}</b><span>${rec?esc(rec.session||'')+(rec.valid?' · valid '+esc(rec.valid):''):'no regular update this day'}</span></div>
+    <div><b class="tdt">${selDate===latest?'Latest · ':''}${dayLong(selDate)}<button id="tCal" class="tcal ${calOpen?'on':''}" aria-label="Calendar" aria-pressed="${calOpen}" title="Calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg></button></b><span>${rec?esc(rec.session||'')+(rec.valid?' · valid '+esc(rec.valid):''):'no regular update this day'}</span></div>
     <button data-nav="1" ${i<0||i>=ds.length-1?'disabled':''} aria-label="Next day">›</button></div>`;
   const rows=rec?fs.map(f=>`<tr><th>₹${fmt(f)}</th>${tdCell(selDate,f,'p1')}${tdCell(selDate,f,'p5')}</tr>`).join(''):'';
   const table=rec?`<div class="twrap"><table class="tbl tday"><colgroup><col style="width:18%"><col style="width:23%"><col style="width:18%"><col style="width:23%"><col style="width:18%"></colgroup><thead><tr><th>Amount</th><th colspan="2">1 pc min</th><th colspan="2">5 pcs min</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -171,6 +181,7 @@ function todayHtml(){
   };
   const offHtml=offs.map(o=>`<div class="toffh ${o.drop?'dr':''}">${o.drop?'Price drop':'Special offer'}${o.valid?' · '+esc(o.valid):''}</div>
     <div class="twrap ${o.drop?'tw-drop':'tw-off'}"><table class="tbl tday"><colgroup><col style="width:18%"><col style="width:23%"><col style="width:18%"><col style="width:23%"><col style="width:18%"></colgroup><thead><tr><th>Amount</th><th colspan="2">1 pc min</th><th colspan="2">5 pcs min</th></tr></thead><tbody>${Object.keys(o.rates).sort((x,y)=>x-y).map(f=>`<tr><th>₹${fmt(f)}</th>${offCell(o,f,'p1')}${offCell(o,f,'p5')}</tr>`).join('')}</tbody></table></div>`).join('')+(offs.length?'<p class="tfoot">Offer and price-drop changes are compared with that day’s regular rate.</p>':'');
+  if(calOpen)return nav+calHtml();
   return nav+table+offHtml;
 }
 
@@ -286,8 +297,8 @@ function dataHtml(){
 }
 function csv(){
   const fs=faces(),q=v=>v===undefined?'':v;
-  const lines=[['Date','Session','Valid','Type',...fs.flatMap(f=>[f+' 1pc',f+' 5pcs'])].join(',')];
-  prices.forEach(p=>lines.push([p.date,p.session||'',p.valid||'',p.offer?'offer':p.drop?'drop':'regular',...fs.flatMap(f=>[q(val(p,f,'p1')),q(val(p,f,'p5'))])].map(c=>/[",]/.test(c)?'"'+String(c).replace(/"/g,'""')+'"':c).join(',')));
+  const lines=[['Date','Session','Valid','Type','Available on',...fs.flatMap(f=>[f+' 1pc',f+' 5pcs'])].join(',')];
+  prices.forEach(p=>lines.push([p.date,p.session||'',p.valid||'',p.offer?'offer':p.drop?'drop':'regular',(p.avail||[]).join('; '),...fs.flatMap(f=>[q(val(p,f,'p1')),q(val(p,f,'p5'))])].map(c=>/[",]/.test(c)?'"'+String(c).replace(/"/g,'""')+'"':c).join(',')));
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));a.download='ps-prices.csv';document.body.appendChild(a);a.click();a.remove();
 }
 
@@ -306,7 +317,46 @@ function calHtml(){
   const inMonth=[...ds].filter(x=>x.startsWith(`${calY}-${pad(calM+1)}`)).length;
   return `<div class="cnav"><button data-cm="-1" aria-label="Previous month">‹</button><b>${MON[calM]} ${calY}</b><button data-cm="1" aria-label="Next month">›</button></div>
   <div class="cgrid"><span class="cdw">Mon</span><span class="cdw">Tue</span><span class="cdw">Wed</span><span class="cdw">Thu</span><span class="cdw">Fri</span><span class="cdw">Sat</span><span class="cdw">Sun</span>${cells}</div>
-  <p class="tfoot">${inMonth} day${inMonth===1?'':'s'} with prices this month. Small number = ₹${ref?fmt(ref):''} 1 pc rate, green/red = up/down vs previous day, orange dot = special offer, red dot = price drop. Tap a day to open its price chart.</p>`;
+  <p class="tfoot">${inMonth} day${inMonth===1?'':'s'} with prices this month. Small number = ₹${ref?fmt(ref):''} 1 pc rate, green/red = up/down vs previous day, orange dot = special offer, red dot = price drop. Tap a day to see its prices.</p>`;
+}
+
+/* ---------- tab 4: availability (read from the "Available:- ..." line of each price message) ---------- */
+function availData(){
+  const days={},names=new Map();
+  prices.forEach(p=>{
+    if(!p.avail)return;
+    const m=days[p.date]||(days[p.date]=new Set());
+    p.avail.forEach(n=>{const k=n.toLowerCase().replace(/\s+/g,'');m.add(k);if(!names.has(k))names.set(k,n)});
+  });
+  return {days,names,dates:Object.keys(days).sort()};
+}
+function availHtml(){
+  const {days,names,dates}=availData();
+  if(!dates.length)return `<div class="tnone">No availability saved yet.<br>It is read from the “Available:- …” line of each price message. Paste your messages again with “+ Add data” to fill it in.</div>`;
+  const latest=dates[dates.length-1],prevD=dates[dates.length-2],now=days[latest];
+  const nm=k=>esc(names.get(k));
+  const chips=[...now].map(k=>`<span class="avc on">${nm(k)}</span>`).join('');
+  let diff='';
+  if(prevD){
+    const pv=days[prevD],added=[...now].filter(k=>!pv.has(k)),gone=[...pv].filter(k=>!now.has(k));
+    diff=(added.length?`<div class="avd">New since ${dLabel({date:prevD})}: ${added.map(k=>`<span class="avc new">+ ${nm(k)}</span>`).join('')}</div>`:'')+(gone.length?`<div class="avd">Not listed now: ${gone.map(k=>`<span class="avc gone">− ${nm(k)}</span>`).join('')}</div>`:'');
+  }
+  // last N calendar days ending today
+  const N=avN,end=new Date(),cal=[];
+  for(let i=N-1;i>=0;i--){const d=new Date(end.getFullYear(),end.getMonth(),end.getDate()-i);cal.push(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`)}
+  const rows=[...names.keys()].map(k=>{
+    const seen=dates.filter(d=>days[d].has(k)),known=cal.filter(d=>days[d]),on=cal.filter(d=>days[d]&&days[d].has(k));
+    return {k,now:now.has(k),last:seen[seen.length-1],on:on.length,known:known.length,total:seen.length,
+      cells:cal.map(d=>`<i class="${days[d]?(days[d].has(k)?'on':'off'):'na'}" title="${dLabel({date:d})} · ${days[d]?(days[d].has(k)?'available':'not listed'):'no update'}"></i>`).join('')};
+  }).sort((a,b)=>(b.now-a.now)||(b.on-a.on)||names.get(a.k).localeCompare(names.get(b.k)));
+  const list=rows.map(r=>`<div class="av"><div class="avh"><b>${nm(r.k)}</b><span class="avs ${r.now?'on':'off'}">${r.now?'Available now':'Not listed now'}</span></div>
+    <div class="avm">Last available ${dLabel({date:r.last})} · ${r.on} of ${r.known} day${r.known===1?'':'s'} in this view · ${r.total} day${r.total===1?'':'s'} overall</div>
+    <div class="avstrip" style="--n:${N}">${r.cells}</div>
+    <div class="avax"><span>${dLabel({date:cal[0]})}</span><span>${dLabel({date:cal[cal.length-1]})}</span></div></div>`).join('');
+  return `<div class="avsum"><div class="avt">Latest listing · ${dLabel({date:latest})}</div><div class="avc-wrap">${chips}</div>${diff}</div>
+  <div class="tt"><button data-av="14" class="${N===14?'on':''}">14 days</button><button data-av="30" class="${N===30?'on':''}">30 days</button></div>
+  ${list}
+  <p class="tfoot">Green = listed that day, red = not listed, grey = no update saved that day. Days with several updates are combined.</p>`;
 }
 
 /* ---------- render ---------- */
@@ -314,14 +364,17 @@ function render(){
   $('#tNote',ov).textContent=note||'Buy rates from the WhatsApp price update';
   ov.querySelectorAll('#tTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
   if(tab!=='data')ov.classList.remove('full');
-  body.innerHTML=tab==='today'?todayHtml():tab==='graph'?graphHtml():tab==='data'?dataHtml():calHtml();
+  if(tab!=='today')calOpen=false;
+  body.innerHTML=tab==='today'?todayHtml():tab==='graph'?graphHtml():tab==='data'?dataHtml():availHtml();
   wire();
   if(tab==='graph')wireChart();
 }
 function wire(){
   ov.querySelectorAll('#tTabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render();body.scrollTop=0;ov.querySelector('.modal').scrollTop=0});
   const on=(sel,fn)=>body.querySelectorAll(sel).forEach(fn);
-  on('[data-nav]',b=>b.onclick=()=>{const ds=regDates(),i=ds.indexOf(selDate)+ +b.dataset.nav;if(ds[i]){selDate=ds[i];render()}});
+  on('[data-nav]',b=>b.onclick=()=>{const ds=regDates(),i=ds.indexOf(selDate)+ +b.dataset.nav;if(ds[i]){selDate=ds[i];const [y,m]=selDate.split('-');calY=+y;calM=+m-1;render()}});
+  on('#tCal',b=>b.onclick=()=>{calOpen=!calOpen;if(calOpen&&selDate){const [y,m]=selDate.split('-');calY=+y;calM=+m-1}render()});
+  on('[data-av]',b=>b.onclick=()=>{avN=+b.dataset.av;render()});
   on('#tFace [data-f]',b=>b.onclick=()=>{const f=b.dataset.f;if(gFaces.has(f)){if(gFaces.size>1)gFaces.delete(f)}else gFaces.add(f);render()});
   on('[data-p]',b=>b.onclick=()=>{const k=b.dataset.p;if(gPcs.has(k)){if(gPcs.size>1)gPcs.delete(k)}else gPcs.add(k);render()});
   on('#tPct',b=>b.onclick=()=>{pct=!pct;render()});
@@ -333,7 +386,7 @@ function wire(){
   on('#tAddIn',b=>b.onclick=openAdd);
   on('#tExpand',b=>b.onclick=()=>{const f=ov.classList.toggle('full');b.textContent=f?'⤡':'⤢';b.title=b.ariaLabel=f?'Collapse':'Expand'});
   on('[data-cm]',b=>b.onclick=()=>{calM+=+b.dataset.cm;if(calM<0){calM=11;calY--}if(calM>11){calM=0;calY++}render()});
-  on('[data-d]',b=>b.onclick=()=>{selDate=b.dataset.d;tab='today';render();ov.querySelector('.modal').scrollTop=0});
+  on('[data-d]',b=>b.onclick=()=>{selDate=b.dataset.d;tab='today';calOpen=false;render();ov.querySelector('.modal').scrollTop=0});
   on('[data-del]',b=>b.onclick=()=>{
     const id=b.dataset.del,p=prices.find(x=>x.id===id);if(!p)return;
     askDelete(p.offer?'Delete this offer?':p.drop?'Delete this price drop?':'Delete this update?',`${dFull(p)}${isSp(p)&&p.valid?' · '+p.valid:''}. This can’t be undone.`,async()=>{
@@ -411,7 +464,7 @@ async function refresh(){
   catch(e){note=e.message==='auth'?'wrong passcode - tap the button again':'offline - showing last saved copy'}
   render();
 }
-function open(){tab='today';selDate=null;render();ov.hidden=false;document.body.style.overflow='hidden';refresh()}
+function open(){tab='today';selDate=null;calOpen=false;render();ov.hidden=false;document.body.style.overflow='hidden';refresh()}
 function close(){if(ov.hidden)return;closeAdd();ov.classList.remove('full');ov.classList.add('closing');setTimeout(()=>{ov.hidden=true;ov.classList.remove('closing');document.body.style.overflow=''},250)}
 $('#tClose',ov).onclick=close;
 ov.onclick=e=>{if(e.target===ov)close()};
