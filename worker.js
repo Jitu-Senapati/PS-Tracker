@@ -14,6 +14,7 @@ export class BookDO extends DurableObject {
     this.sql.exec("CREATE TABLE IF NOT EXISTS entries (id TEXT PRIMARY KEY, data TEXT NOT NULL)");
     this.sql.exec("CREATE TABLE IF NOT EXISTS people (name TEXT PRIMARY KEY, pos INTEGER)");
     this.sql.exec("CREATE TABLE IF NOT EXISTS prices (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, data TEXT NOT NULL)");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS stock (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, data TEXT NOT NULL)");
     try { this.sql.exec("ALTER TABLE people ADD COLUMN capital REAL NOT NULL DEFAULT 0"); } catch (e) { /* already added */ }
     if (fresh) ["Chinu", "Jitu", "Goat"].forEach((p, i) => this.sql.exec("INSERT OR IGNORE INTO people (name, pos) VALUES (?, ?)", p, i));
   }
@@ -28,6 +29,25 @@ export class BookDO extends DurableObject {
       const capital = Object.fromEntries(rows.map(r => [r.name, r.capital || 0]));
       const entries = this.sql.exec("SELECT data FROM entries").toArray().map(r => JSON.parse(r.data));
       return J({ people, capital, entries });
+    }
+    // Availability log: which card (denomination) was available / sold out on which platform, per day.
+    if (m === "GET" && sub === "stock") {
+      const stock = this.sql.exec("SELECT data FROM stock ORDER BY ts").toArray().map(r => JSON.parse(r.data));
+      return J({ stock });
+    }
+    if (m === "PUT" && sub === "stock") {
+      const p = await request.json().catch(() => null);
+      if (!p || typeof p.id !== "string" || p.id.length > 100 || !/^\d{4}-\d{2}-\d{2}$/.test(p.date || "") || !Number.isFinite(p.ts) ||
+          typeof p.platform !== "string" || !p.platform || p.platform.length > 60 || !Number.isFinite(p.denom) || p.denom <= 0 || p.denom > 1e6 ||
+          (p.status !== "in" && p.status !== "out"))
+        return J({ error: "bad stock entry" }, 400);
+      const data = JSON.stringify({ id: p.id, date: p.date, ts: p.ts, platform: p.platform, denom: p.denom, status: p.status });
+      this.sql.exec("INSERT INTO stock (id, ts, data) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET ts = excluded.ts, data = excluded.data", p.id, p.ts, data);
+      return J({ ok: true });
+    }
+    if (m === "DELETE" && sub === "stock" && parts[3]) {
+      this.sql.exec("DELETE FROM stock WHERE id = ?", decodeURIComponent(parts[3]));
+      return J({ ok: true });
     }
     // Buy-rate history from the Telegram "Price Update" messages (one row per date + session).
     if (m === "GET" && sub === "prices") {

@@ -43,8 +43,8 @@ function renderPlatforms(flash){
   $('platforms').innerHTML=orderedPlatforms().map((p,i)=>{
     const n=p.items.filter(x=>x.s).length;
     return `<article class="card" data-name="${p.name}" style="${flash?'animation:none;opacity:1':`animation-delay:${i*70}ms`}">
-      <div class="ch"><div class="logo">${logoOf(p)}</div>
-        <div><h3>${p.name}</h3><small>${p.items.filter(x=>!x.label).length} denominations${p.items.some(x=>x.label)?" + custom":""}</small></div>
+      <div class="ch">${p.home?`<a class="chl" href="${p.home}" target="_blank" rel="noopener noreferrer" draggable="false" title="Open ${p.name}">`:'<div class="chl">'}<div class="logo">${logoOf(p)}</div>
+        <div><h3>${p.name}</h3><small>${p.items.filter(x=>!x.label).length} denominations${p.items.some(x=>x.label)?" + custom":""}</small></div>${p.home?'</a>':'</div>'}
         <span class="tag ${n?'':'off'}">${n?n+' in stock':'Unavailable'}</span></div>
       <div class="chips">${p.items.map(it=>{const k=p.name+'-'+it.v;return `
         <a class="chip ${it.s?'':'out'}" draggable="false" ${(it.u||p.home)?`href="${it.u||p.home}" target="_blank" rel="noopener noreferrer"`:''} data-ripple>

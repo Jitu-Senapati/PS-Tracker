@@ -26,15 +26,6 @@ function psRates(lines){
   return rates;
 }
 const HEAD=/Price\s*Update\s*(\d{1,2})\s*([A-Za-z]{3,9})(?:\s*(\d{4}))?\s*Valid\s*(\d{1,2}:\d{2}\s*[AP]M)?\s*(?:\(\s*([^)]*?)\s*\))?/i;
-// "Available:- Paytm, Phonepay, ... Etc" line: the platforms where the PlayStation cards were available
-function availOf(lines){
-  for(const ln of lines){
-    const m=ln.match(/^\W*Available\s*:?\s*-*\s*(.+)$/i);if(!m)continue;
-    const items=m[1].split(/[,&\/]|\band\b/i).map(x=>x.replace(/\betc\.?\s*$/i,'').replace(/[^\p{L}\p{N} .+-]/gu,'').replace(/\s+/g,' ').trim()).filter(x=>x&&!/^etc\.?$/i.test(x));
-    if(items.length)return [...new Set(items)];
-  }
-  return null;
-}
 const DROPLINE=/Price\s*Down\s*Time/i;
 const DROPWIN=/Price\s*Down\s*Time\W*(\d{1,2}:\d{2}\s*[AP]M)\s*to\s*(\d{1,2}:\d{2}\s*[AP]M)/i;
 const OFFER_LINE=/^[^A-Za-z0-9]*offer[^A-Za-z0-9]*$/i;
@@ -70,8 +61,7 @@ function parseAll(text,fallbackDate,now=new Date()){
       if(!Object.keys(rates).length)warn.push(`${+h[1]} ${MON[month]}: no PlayStation rates found`);
       else{
         const [hh,mm]=hm(h[4],[12,0]),session=(h[5]||'').trim()||null,valid=(h[4]||'').replace(/\s+/g,' ').trim()||null;
-        const av=availOf(reg);
-        recs.push({id:date+'|'+(session||valid||'update').toLowerCase().replace(/[^a-z0-9: ]/g,'').slice(0,30),date,ts:istTs(y,month,+h[1],hh,mm),session,valid,rates,...(av?{avail:av}:{})});
+        recs.push({id:date+'|'+(session||valid||'update').toLowerCase().replace(/[^a-z0-9: ]/g,'').slice(0,30),date,ts:istTs(y,month,+h[1],hh,mm),session,valid,rates});
       }
     }
     const orates=psRates(off);
@@ -101,7 +91,7 @@ function parseAll(text,fallbackDate,now=new Date()){
       const win=w?w[1].replace(/\s+/g,'')+' - '+w[2].replace(/\s+/g,''):null;
       let id=d.date+'|drop-'+pad(hh)+pad(mm);
       while(recs.some(r=>r.id===id))id+='b';
-      recs.push({id,date:d.date,ts:istTs(d.y,d.month,d.d,hh,mm),session:'Price drop',valid:win,drop:true,rates:drates,...(availOf(dropL)?{avail:availOf(dropL)}:{})});
+      recs.push({id,date:d.date,ts:istTs(d.y,d.month,d.d,hh,mm),session:'Price drop',valid:win,drop:true,rates:drates});
     }
   }
   return {records:recs,warnings:warn,needDate};
@@ -297,8 +287,8 @@ function dataHtml(){
 }
 function csv(){
   const fs=faces(),q=v=>v===undefined?'':v;
-  const lines=[['Date','Session','Valid','Type','Available on',...fs.flatMap(f=>[f+' 1pc',f+' 5pcs'])].join(',')];
-  prices.forEach(p=>lines.push([p.date,p.session||'',p.valid||'',p.offer?'offer':p.drop?'drop':'regular',(p.avail||[]).join('; '),...fs.flatMap(f=>[q(val(p,f,'p1')),q(val(p,f,'p5'))])].map(c=>/[",]/.test(c)?'"'+String(c).replace(/"/g,'""')+'"':c).join(',')));
+  const lines=[['Date','Session','Valid','Type',...fs.flatMap(f=>[f+' 1pc',f+' 5pcs'])].join(',')];
+  prices.forEach(p=>lines.push([p.date,p.session||'',p.valid||'',p.offer?'offer':p.drop?'drop':'regular',...fs.flatMap(f=>[q(val(p,f,'p1')),q(val(p,f,'p5'))])].map(c=>/[",]/.test(c)?'"'+String(c).replace(/"/g,'""')+'"':c).join(',')));
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));a.download='ps-prices.csv';document.body.appendChild(a);a.click();a.remove();
 }
 
@@ -320,43 +310,66 @@ function calHtml(){
   <p class="tfoot">${inMonth} day${inMonth===1?'':'s'} with prices this month. Small number = ₹${ref?fmt(ref):''} 1 pc rate, green/red = up/down vs previous day, orange dot = special offer, red dot = price drop. Tap a day to see its prices.</p>`;
 }
 
-/* ---------- tab 4: availability (read from the "Available:- ..." line of each price message) ---------- */
-function availData(){
-  const days={},names=new Map();
-  prices.forEach(p=>{
-    if(!p.avail)return;
-    const m=days[p.date]||(days[p.date]=new Set());
-    p.avail.forEach(n=>{const k=n.toLowerCase().replace(/\s+/g,'');m.add(k);if(!names.has(k))names.set(k,n)});
-  });
-  return {days,names,dates:Object.keys(days).sort()};
-}
+/* ---------- tab 4: availability log (you record which card was available / sold out on which platform) ---------- */
+const SK='pst.stock.v1';
+let stock=(()=>{try{return JSON.parse(localStorage.getItem(SK))||[]}catch(e){return []}})(),avDen='all';
+const writeStock=l=>{try{localStorage.setItem(SK,JSON.stringify(l))}catch(e){}};
+const PL=()=>typeof PLATFORMS!=='undefined'?PLATFORMS:[];
+const pkey=n=>String(n).toLowerCase().replace(/[^a-z0-9]/g,'');
+const platDens=p=>(p.items||[]).filter(i=>typeof i.v==='number').map(i=>i.v);
+const latestBy=(arr,keyf)=>{const m=new Map();arr.forEach(r=>{const k=keyf(r),o=m.get(k);if(!o||r.ts>=o.ts)m.set(k,r)});return m};
+
 function availHtml(){
-  const {days,names,dates}=availData();
-  if(!dates.length)return `<div class="tnone">No availability saved yet.<br>It is read from the “Available:- …” line of each price message. Paste your messages again with “+ Add data” to fill it in.</div>`;
-  const latest=dates[dates.length-1],prevD=dates[dates.length-2],now=days[latest];
-  const nm=k=>esc(names.get(k));
-  const chips=[...now].map(k=>`<span class="avc on">${nm(k)}</span>`).join('');
-  let diff='';
-  if(prevD){
-    const pv=days[prevD],added=[...now].filter(k=>!pv.has(k)),gone=[...pv].filter(k=>!now.has(k));
-    diff=(added.length?`<div class="avd">New since ${dLabel({date:prevD})}: ${added.map(k=>`<span class="avc new">+ ${nm(k)}</span>`).join('')}</div>`:'')+(gone.length?`<div class="avd">Not listed now: ${gone.map(k=>`<span class="avc gone">− ${nm(k)}</span>`).join('')}</div>`:'');
-  }
-  // last N calendar days ending today
+  const btn=`<div class="tadd"><button class="ghost" id="sOpen">+ Add availability</button></div>`;
+  if(!stock.length)return `<div class="tnone">Nothing logged yet.<br>Log when a card is available (or sold out) on a platform, for example “E2Z Store 2000”.</div>`+btn;
+  const dens=[...new Set(stock.map(r=>r.denom))].sort((a,b)=>a-b);
+  if(avDen!=='all'&&!dens.includes(+avDen))avDen='all';
+  const recs=avDen==='all'?stock:stock.filter(r=>r.denom===+avDen);
   const N=avN,end=new Date(),cal=[];
   for(let i=N-1;i>=0;i--){const d=new Date(end.getFullYear(),end.getMonth(),end.getDate()-i);cal.push(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`)}
-  const rows=[...names.keys()].map(k=>{
-    const seen=dates.filter(d=>days[d].has(k)),known=cal.filter(d=>days[d]),on=cal.filter(d=>days[d]&&days[d].has(k));
-    return {k,now:now.has(k),last:seen[seen.length-1],on:on.length,known:known.length,total:seen.length,
-      cells:cal.map(d=>`<i class="${days[d]?(days[d].has(k)?'on':'off'):'na'}" title="${dLabel({date:d})} · ${days[d]?(days[d].has(k)?'available':'not listed'):'no update'}"></i>`).join('')};
-  }).sort((a,b)=>(b.now-a.now)||(b.on-a.on)||names.get(a.k).localeCompare(names.get(b.k)));
-  const list=rows.map(r=>`<div class="av"><div class="avh"><b>${nm(r.k)}</b><span class="avs ${r.now?'on':'off'}">${r.now?'Available now':'Not listed now'}</span></div>
-    <div class="avm">Last available ${dLabel({date:r.last})} · ${r.on} of ${r.known} day${r.known===1?'':'s'} in this view · ${r.total} day${r.total===1?'':'s'} overall</div>
-    <div class="avstrip" style="--n:${N}">${r.cells}</div>
+  const plats=[...new Set(recs.map(r=>r.platform))].map(name=>{
+    const rp=recs.filter(r=>r.platform===name),cur=[...latestBy(rp,r=>r.denom).values()].sort((a,b)=>a.denom-b.denom);
+    const ins=cur.filter(r=>r.status==='in'),inDates=rp.filter(r=>r.status==='in').map(r=>r.date).sort();
+    const byDay={};rp.forEach(r=>{(byDay[r.date]=byDay[r.date]||[]).push(r)});
+    const cells=cal.map(d=>{
+      const day=byDay[d];if(!day)return `<i class="na" title="${dLabel({date:d})} · not logged"></i>`;
+      const st=[...latestBy(day,r=>r.denom).values()],inn=st.filter(r=>r.status==='in');
+      return `<i class="${inn.length?'on':'off'}" title="${dLabel({date:d})} · ${inn.length?'available: '+inn.map(r=>'₹'+fmt(r.denom)).join(', '):'sold out'}"></i>`;
+    }).join('');
+    const days=new Set(rp.filter(r=>r.status==='in'&&cal.includes(r.date)).map(r=>r.date)).size;
+    return {name,cur,ins,last:inDates[inDates.length-1],cells,days,logged:new Set(rp.map(r=>r.date)).size};
+  }).sort((a,b)=>(b.ins.length-a.ins.length)||a.name.localeCompare(b.name));
+  const nowList=plats.filter(p=>p.ins.length);
+  const sum=`<div class="avsum"><div class="avt">In stock now (latest log)${avDen==='all'?'':' · ₹'+fmt(avDen)}</div>${nowList.length?`<div class="avc-wrap">${nowList.map(p=>`<span class="avc on">${esc(p.name)} · ${p.ins.map(r=>'₹'+fmt(r.denom)).join(', ')}</span>`).join('')}</div>`:'<div class="avm">Nothing is logged as available right now.</div>'}</div>`;
+  const filt=`<div class="tt"><button data-ad="all" class="${avDen==='all'?'on':''}">All cards</button>${dens.map(d=>`<button data-ad="${d}" class="${+avDen===d?'on':''}">${fmt(d)}</button>`).join('')}</div>
+  <div class="tt"><button data-av="14" class="${N===14?'on':''}">14 days</button><button data-av="30" class="${N===30?'on':''}">30 days</button></div>`;
+  const list=plats.map(p=>`<div class="av"><div class="avh"><b>${esc(p.name)}</b><span class="avs ${p.ins.length?'on':'off'}">${p.ins.length?'In stock':'Sold out'}</span></div>
+    <div class="avchips">${p.cur.map(r=>`<span class="avc ${r.status==='in'?'on':'gone'}">₹${fmt(r.denom)}${r.status==='in'?'':' · out'}</span>`).join('')}</div>
+    <div class="avm">${p.last?'Last available '+dLabel({date:p.last}):'Never logged as available'} · in stock on ${p.days} of the last ${N} days · logged on ${p.logged} day${p.logged===1?'':'s'}</div>
+    <div class="avstrip" style="--n:${N}">${p.cells}</div>
     <div class="avax"><span>${dLabel({date:cal[0]})}</span><span>${dLabel({date:cal[cal.length-1]})}</span></div></div>`).join('');
-  return `<div class="avsum"><div class="avt">Latest listing · ${dLabel({date:latest})}</div><div class="avc-wrap">${chips}</div>${diff}</div>
-  <div class="tt"><button data-av="14" class="${N===14?'on':''}">14 days</button><button data-av="30" class="${N===30?'on':''}">30 days</button></div>
-  ${list}
-  <p class="tfoot">Green = listed that day, red = not listed, grey = no update saved that day. Days with several updates are combined.</p>`;
+  const recent=stock.slice().sort((a,b)=>b.ts-a.ts).slice(0,12).map(r=>`<div class="thist"><span><b>${esc(dLabel(r))}</b> · ${esc(r.platform)} · ₹${fmt(r.denom)} · <span class="${r.status==='in'?'up':'down'}">${r.status==='in'?'available':'sold out'}</span></span><button data-sdel="${esc(r.id)}" aria-label="Delete">×</button></div>`).join('');
+  return sum+filt+list+`<p class="tfoot">Green = at least one card in stock that day, red = logged as sold out, grey = nothing logged. “In stock now” follows the most recent log for each card.</p><div class="th">Recent entries</div>${recent}`+btn;
+}
+
+/* quick entry: one line per platform, e.g.  "E2Z Store 2000 5000"  /  "Amazon 1000 out"  /  "Flipkart all" */
+function parseStock(text){
+  const out=[],warn=[],P=PL();
+  for(const raw of String(text||'').split(/\r?\n/)){
+    const ln=raw.replace(/[*`_~]/g,'').trim();if(!ln)continue;
+    const status=/\b(sold\s*out|out\s*of\s*stock|out|unavailable|not\s*available|oos|na)\b/i.test(ln)?'out':'in';
+    const all=/\ball\b/i.test(ln),dens=[];
+    let rest=ln.replace(/\b(\d{1,2})\s*k\b/gi,(m,n)=>{dens.push(+n*1000);return ' '});
+    rest=rest.replace(/\b(\d{3,5})\b/g,(m,n)=>{dens.push(+n);return ' '});
+    rest=rest.replace(/\b(sold\s*out|out\s*of\s*stock|out|unavailable|not\s*available|oos|na|available|in\s*stock|all)\b/gi,' ');
+    const name=rest.replace(/[^\p{L}\p{N} ]/gu,' ').replace(/\s+/g,' ').trim(),key=pkey(name);
+    let pl=key.length>=2?(P.find(p=>pkey(p.name)===key)||P.find(p=>pkey(p.name).startsWith(key))||P.find(p=>key.startsWith(pkey(p.name)))||P.find(p=>pkey(p.name).includes(key))):null;
+    if(!pl){warn.push(`“${name||ln}” is not a platform on your list`);continue}
+    let d=[...new Set(all?platDens(pl):dens)];
+    if(!d.length){warn.push(`${pl.name}: add a card amount (like 2000) or “all”`);continue}
+    out.push({platform:pl.name,denoms:d.sort((a,b)=>a-b),status});
+  }
+  return {entries:out,warnings:warn};
 }
 
 /* ---------- render ---------- */
@@ -375,6 +388,16 @@ function wire(){
   on('[data-nav]',b=>b.onclick=()=>{const ds=regDates(),i=ds.indexOf(selDate)+ +b.dataset.nav;if(ds[i]){selDate=ds[i];const [y,m]=selDate.split('-');calY=+y;calM=+m-1;render()}});
   on('#tCal',b=>b.onclick=()=>{calOpen=!calOpen;if(calOpen&&selDate){const [y,m]=selDate.split('-');calY=+y;calM=+m-1}render()});
   on('[data-av]',b=>b.onclick=()=>{avN=+b.dataset.av;render()});
+  on('[data-ad]',b=>b.onclick=()=>{avDen=b.dataset.ad;render()});
+  on('#sOpen',b=>b.onclick=openStock);
+  on('[data-sdel]',b=>b.onclick=()=>{
+    const id=b.dataset.sdel,r=stock.find(x=>x.id===id);if(!r)return;
+    askDelete('Delete this entry?',`${dLabel(r)} · ${r.platform} · ₹${fmt(r.denom)} · ${r.status==='in'?'available':'sold out'}. This can’t be undone.`,async()=>{
+      try{await api('DELETE','/stock/'+encodeURIComponent(id));stock=stock.filter(x=>x.id!==id);writeStock(stock);note='deleted'}
+      catch(e){note=e.message==='auth'?'wrong passcode - delete failed':'could not delete (offline or worker not updated)'}
+      render();
+    });
+  });
   on('#tFace [data-f]',b=>b.onclick=()=>{const f=b.dataset.f;if(gFaces.has(f)){if(gFaces.size>1)gFaces.delete(f)}else gFaces.add(f);render()});
   on('[data-p]',b=>b.onclick=()=>{const k=b.dataset.p;if(gPcs.has(k)){if(gPcs.size>1)gPcs.delete(k)}else gPcs.add(k);render()});
   on('#tPct',b=>b.onclick=()=>{pct=!pct;render()});
@@ -441,6 +464,73 @@ $('#tAddX',addOv).onclick=closeAdd;
 addOv.onclick=e=>{if(e.target===addOv)closeAdd()};
 $('#tAddBtn',ov).onclick=openAdd;
 
+/* ---------- add-availability window ---------- */
+const stOv=document.createElement('div');
+stOv.id='tStock';stOv.className='overlay';stOv.hidden=true;
+stOv.innerHTML=`<section class="modal" role="dialog" aria-modal="true" aria-labelledby="sT">
+  <div class="mhead"><div><h2 id="sT">Add availability</h2><p>Which card was available (or sold out) on which platform</p></div>
+  <button id="sX" class="btn icon sm" data-ripple aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+  <div class="tadd">
+    <div class="th" style="margin:2px 0 0">Tap to build a line</div>
+    <select id="sPlat"></select>
+    <div class="tt" id="sDen"></div>
+    <div class="tt"><button class="sw on" data-ss="in">Available</button><button class="sw" data-ss="out" style="--c:#ff6b6b">Sold out</button><button class="ghost" id="sAdd" style="flex:1 0 auto">Add line</button></div>
+    <div class="th" style="margin:6px 0 0">Or type / paste (one platform per line)</div>
+    <textarea id="sText" placeholder="E2Z Store 2000 5000&#10;Amazon 1000 out&#10;Flipkart all" spellcheck="false"></textarea>
+    <label class="tdate">Date <input type="date" id="sDate"></label>
+    <div class="tprev" id="sPrev"></div><button class="go" id="sSave" disabled>Save</button>
+  </div></section>`;
+document.body.appendChild(stOv);
+{
+  const sel=$('#sPlat',stOv),den=$('#sDen',stOv),ta=$('#sText',stOv),pv=$('#sPrev',stOv),sv=$('#sSave',stOv),di=$('#sDate',stOv);
+  let pickD=new Set(),pickS='in',res=null;
+  const fillDen=()=>{
+    const pl=PL().find(p=>p.name===sel.value),ds=pl?[...new Set(platDens(pl))]:[];pickD=new Set();
+    den.innerHTML=(ds.length?`<button data-sd="all" class="sw">All</button>`+ds.map(d=>`<button data-sd="${d}" class="sw">${fmt(d)}</button>`).join(''):'<span class="tprev">No fixed card amounts for this platform - type them in the box below.</span>');
+  };
+  sel.innerHTML=PL().map(p=>`<option>${esc(p.name)}</option>`).join('');
+  sel.onchange=fillDen;
+  den.onclick=e=>{const b=e.target.closest('[data-sd]');if(!b)return;
+    if(b.dataset.sd==='all'){const all=[...den.querySelectorAll('[data-sd]')].filter(x=>x.dataset.sd!=='all');const on=pickD.size<all.length;pickD=new Set(on?all.map(x=>x.dataset.sd):[]);}
+    else{const v=b.dataset.sd;pickD.has(v)?pickD.delete(v):pickD.add(v)}
+    den.querySelectorAll('[data-sd]').forEach(x=>x.classList.toggle('on',x.dataset.sd!=='all'&&pickD.has(x.dataset.sd)));
+    const allB=den.querySelector('[data-sd="all"]');if(allB)allB.classList.toggle('on',pickD.size&&pickD.size===den.querySelectorAll('[data-sd]').length-1);
+  };
+  stOv.querySelectorAll('[data-ss]').forEach(b=>b.onclick=()=>{pickS=b.dataset.ss;stOv.querySelectorAll('[data-ss]').forEach(x=>x.classList.toggle('on',x===b))});
+  $('#sAdd',stOv).onclick=()=>{
+    if(!sel.value)return;
+    const line=`${sel.value} ${pickD.size?[...pickD].sort((a,b)=>a-b).join(' '):'all'}${pickS==='out'?' out':''}`;
+    ta.value=(ta.value.trim()?ta.value.replace(/\s*$/,'')+'\n':'')+line+'\n';check();
+  };
+  const check=()=>{
+    res=null;sv.disabled=true;
+    if(!ta.value.trim()){pv.textContent='';pv.className='tprev';return}
+    const r=parseStock(ta.value);
+    if(!r.entries.length){pv.className='tprev bad';pv.textContent='Nothing to save. '+r.warnings.join('; ');return}
+    pv.className='tprev ok';
+    pv.innerHTML=r.entries.map(e=>`${esc(e.platform)} · ${e.denoms.map(d=>'₹'+fmt(d)).join(', ')} · ${e.status==='in'?'available':'sold out'}`).join('<br>')+(r.warnings.length?`<br><span class="bad">Skipped: ${esc(r.warnings.join('; '))}</span>`:'');
+    res=r;sv.disabled=false;
+  };
+  ta.oninput=check;
+  sv.onclick=async()=>{
+    if(!res||!ensureKey())return;
+    const date=di.value||todayStr(),now=Date.now(),recs=[];
+    res.entries.forEach(e=>e.denoms.forEach(d=>{const id=`${date}|${pkey(e.platform)}|${d}`;const i=recs.findIndex(r=>r.id===id);const rec={id,date,ts:now+recs.length,platform:e.platform,denom:d,status:e.status};if(i>=0)recs[i]=rec;else recs.push(rec)}));
+    sv.disabled=true;sv.textContent='Saving…';
+    try{
+      for(let i=0;i<recs.length;i+=5)await Promise.all(recs.slice(i,i+5).map(r=>api('PUT','/stock',r)));
+      const ids=new Set(recs.map(r=>r.id));
+      stock=stock.filter(x=>!ids.has(x.id)).concat(recs).sort((a,b)=>a.ts-b.ts);writeStock(stock);
+      note='saved '+recs.length;ta.value='';check();sv.textContent='Save';closeStock();render();
+    }catch(e){sv.textContent='Save';sv.disabled=false;pv.className='tprev bad';pv.textContent=e.message==='auth'?'Wrong passcode. Tap Save again to re-enter it.':'Could not save (offline, or the worker file is not updated yet). Try again.'}
+  };
+  window.__tStockOpen=()=>{di.value=todayStr();fillDen();check()};
+}
+function openStock(){window.__tStockOpen();stOv.hidden=false}
+function closeStock(){if(stOv.hidden)return;stOv.classList.add('closing');setTimeout(()=>{stOv.hidden=true;stOv.classList.remove('closing')},250)}
+$('#sX',stOv).onclick=closeStock;
+stOv.onclick=e=>{if(e.target===stOv)closeStock()};
+
 /* ---------- delete confirmation (same look as the Book's) ---------- */
 const cfm=document.createElement('div');
 cfm.className='overlay bk bk-cf';cfm.hidden=true;
@@ -462,13 +552,14 @@ async function refresh(){
   if(!ensureKey()){note='passcode needed for live prices';render();return}
   try{const d=await api('GET','/prices');prices=d.prices||[];writeCache(prices);note='';}
   catch(e){note=e.message==='auth'?'wrong passcode - tap the button again':'offline - showing last saved copy'}
+  try{const d=await api('GET','/stock');stock=d.stock||[];writeStock(stock)}catch(e){}
   render();
 }
 function open(){tab='today';selDate=null;calOpen=false;render();ov.hidden=false;document.body.style.overflow='hidden';refresh()}
-function close(){if(ov.hidden)return;closeAdd();ov.classList.remove('full');ov.classList.add('closing');setTimeout(()=>{ov.hidden=true;ov.classList.remove('closing');document.body.style.overflow=''},250)}
+function close(){if(ov.hidden)return;closeAdd();closeStock();ov.classList.remove('full');ov.classList.add('closing');setTimeout(()=>{ov.hidden=true;ov.classList.remove('closing');document.body.style.overflow=''},250)}
 $('#tClose',ov).onclick=close;
 ov.onclick=e=>{if(e.target===ov)close()};
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!cfm.hidden){cfFn=null;closeCf();return}if(!addOv.hidden)closeAdd();else if(!ov.hidden)close()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!cfm.hidden){cfFn=null;closeCf();return}if(!stOv.hidden)closeStock();else if(!addOv.hidden)closeAdd();else if(!ov.hidden)close()}});
 $('#trendBtn').onclick=open;
 /* ---------- power button = server connection: green (connected), grey spinning (loading), red (offline) ---------- */
 const pw=$('#powerBtn');
