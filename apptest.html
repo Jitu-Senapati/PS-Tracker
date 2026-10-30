@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App link test</title>
+<style>
+body{margin:0;padding:18px;font:15px/1.5 system-ui,sans-serif;background:#0b110e;color:#eaf0ec}
+h1{font-size:1.2rem;margin:0 0 6px}h2{font-size:.8rem;letter-spacing:.07em;text-transform:uppercase;color:#7d8f85;margin:22px 0 8px}
+p{color:#9fb0a6;margin:0 0 10px}
+a{display:block;margin:8px 0;padding:13px 14px;border-radius:12px;border:1px solid #243029;background:#121b16;color:#eaf0ec;text-decoration:none}
+a b{color:#3ad07d;margin-right:6px}a small{display:block;color:#7d8f85;font-size:.76rem;margin-top:2px;word-break:break-all}
+</style></head><body>
+<h1>App link test</h1>
+<p>Open this page on your <b>Android phone</b> (Chrome). Tap each button, one at a time. Note the numbers (like P3) of the buttons that open the app <b>on its home screen with no error</b>, and tell me. Press back after each one.</p>
+
+<h2>Paytm</h2>
+<a href="paytmmp://"><b>P1</b>Paytm: plain app address<small>this one opened the app with an error before</small></a>
+<a href="paytmmp://home"><b>P2</b>Paytm: app address, home<small>paytmmp://home</small></a>
+<a href="intent://paytm.com/#Intent;scheme=https;S.browser_fallback_url=https%3A%2F%2Fpaytm.com%2F;end"><b>P3</b>Paytm: website link handed to the app<small>falls back to paytm.com if the app does not take it</small></a>
+<a href="intent://#Intent;scheme=paytmmp;package=net.one97.paytm;S.browser_fallback_url=https%3A%2F%2Fpaytm.com%2F;end"><b>P4</b>Paytm: app address through Android<small>package net.one97.paytm</small></a>
+<a href="intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=net.one97.paytm;S.browser_fallback_url=https%3A%2F%2Fpaytm.com%2F;end"><b>P5</b>Paytm: just launch the app<small>opens like tapping its icon</small></a>
+
+<h2>PhonePe</h2>
+<a href="phonepe://"><b>H1</b>PhonePe: plain app address<small>phonepe://</small></a>
+<a href="phonepe://home"><b>H2</b>PhonePe: app address, home<small>phonepe://home</small></a>
+<a href="intent://www.phonepe.com/#Intent;scheme=https;S.browser_fallback_url=https%3A%2F%2Fwww.phonepe.com%2F;end"><b>H3</b>PhonePe: website link handed to the app<small>falls back to phonepe.com</small></a>
+<a href="intent://#Intent;scheme=phonepe;package=com.phonepe.app;S.browser_fallback_url=https%3A%2F%2Fwww.phonepe.com%2F;end"><b>H4</b>PhonePe: app address through Android<small>package com.phonepe.app</small></a>
+<a href="intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.phonepe.app;S.browser_fallback_url=https%3A%2F%2Fwww.phonepe.com%2F;end"><b>H5</b>PhonePe: just launch the app<small>opens like tapping its icon</small></a>
+
+<h2>Hubble</h2>
+<a href="intent://www.myhubble.money/gift-cards/playstation#Intent;scheme=https;S.browser_fallback_url=https%3A%2F%2Fwww.myhubble.money%2Fgift-cards%2Fplaystation;end"><b>B1</b>Hubble: link handed to the app<small>falls back to the website</small></a>
+<a href="https://www.myhubble.money/gift-cards/playstation"><b>B2</b>Hubble: plain website link<small>for comparison</small></a>
+
+<h2>Rooter</h2>
+<a href="intent://rooter.app.link/8AtvnFV0u6b#Intent;scheme=https;S.browser_fallback_url=https%3A%2F%2Fshop.rooter.gg%2Fproduct%2Fplaystation-gift-cards;end"><b>R1</b>Rooter: link handed to the app<small>falls back to the website</small></a>
+<a href="https://rooter.app.link/8AtvnFV0u6b"><b>R2</b>Rooter: plain app.link</a>
+
+<h2>Stan Shop</h2>
+<a href="intent://www.stanshop.co/playstation-psn-gift-card-in-india-1000-inr#Intent;scheme=https;S.browser_fallback_url=https%3A%2F%2Fwww.stanshop.co%2Fplaystation-psn-gift-card-in-india-1000-inr;end"><b>S1</b>Stan: link handed to the app / PWA<small>falls back to the website</small></a>
+<a href="https://www.stanshop.co/playstation-psn-gift-card-in-india-1000-inr"><b>S2</b>Stan: plain website link<small>for comparison</small></a>
+</body></html>

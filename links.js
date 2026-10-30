@@ -4,12 +4,16 @@
 //   app    : opens that app first (deep link); falls back to `home` if the app does not open
 //   dens   : the card amounts this platform really has (others are removed, new ones start out of stock)
 //   urls   : a link for each card amount
-//   domain : website used to fetch the logo
+//   domain : website used to fetch the logo (null = use the built-in logo only)
+//   go     : link for card buttons that have no link of their own (default: home)
+//   viaApp : true = on Android open the link in the installed app / PWA first, otherwise the website
+//   appUrl : the link to hand to the app (default: the link itself)
+//   appHeader : false = the logo/name always open `home` in the browser
 const LINKS = [
   {name:'Amazon', home:'https://www.amazon.in/s?k=Sony+PlayStation+Store+Gift+Card&i=videogames&rh=n%3A976460031%2Cp_n_availability%3A1318485031%2Cp_123%3A10806812&dc&ds=v1%3AOULhepWC0Z8i%2BOQIPyiH%2F3iAlg4mgH49lstMYHBGVIA&crid=2TQ370Q31W3KV&qid=1793281741&rnid=215263484031&sprefix=sony+playstation+store+gift+card%2Cvideogames%2C327&ref=sr_nr_p_country_of_origin-bin_1'},
   {name:'Flipkart', home:'https://www.flipkart.com/search?q=playstation+store+gift+card+india&sid=mcd%2Czyx%2Czzo'},
-  {name:'Jio Store', home:'https://store.jiogames.com/products/?brand=playstation'},
-  {name:'Stan Shop', domain:'stanshop.co', home:'https://www.stanshop.co/playstation-psn-gift-card-in-india', dens:[1000,2000,3000,4000], urls:{
+  {name:'Jio Store', domain:null, home:'https://store.jiogames.com/products/?brand=playstation'},
+  {name:'Stan Shop', viaApp:true, domain:'stanshop.co', home:'https://www.stanshop.co/playstation-psn-gift-card-in-india', dens:[1000,2000,3000,4000], urls:{
     1000:'https://www.stanshop.co/playstation-psn-gift-card-in-india-1000-inr',
     2000:'https://www.stanshop.co/playstation-psn-gift-card-in-india-2000-inr',
     3000:'https://www.stanshop.co/playstation-psn-gift-card-in-india-3000-inr',
@@ -20,13 +24,13 @@ const LINKS = [
     3000:'https://e2zstore.com/product/rs-3000-playstation-network-wallet-top-up/',
     4000:'https://e2zstore.com/product/rs-4000-playstation-network-wallet-top-up/',
     5000:'https://e2zstore.com/product/rs-5000-playstation-network-wallet-top-up/'}},
-  // Paytm: you search for PlayStation inside the app (1000, 2000 and 5000 only), so the card buttons open the app
-  {name:'PhonePe', home:'https://www.phonepe.com/', app:'phonepe://', dens:[1000,2000,3000,4000,5000]},
-  {name:'Paytm', home:'https://paytm.com/', app:'paytmmp://', dens:[1000,2000,5000]},
+  // PhonePe / Paytm: you search for PlayStation inside the app. viaApp opens the installed app (Android) if it handles the link, otherwise the website.
+  {name:'PhonePe', viaApp:true, home:'https://www.phonepe.com/', dens:[1000,2000,3000,4000,5000]},
+  {name:'Paytm', viaApp:true, home:'https://paytm.com/', dens:[1000,2000,5000]},
   {name:'Gyftr', home:'https://www.gyftr.com/sony-playstation', dens:[1000,2000,3000,4000,5000]},
-  // Hubble: logo / name open the Gyftr page. Add  app:'<hubble app link>'  here when you have it, so the card buttons open the app.
-  {name:'Hubble', domain:'myhubble.money', home:'https://www.gyftr.com/sony-playstation'},
-  {name:'Rooter', home:'https://shop.rooter.gg/product/playstation-gift-cards', dens:[1000,2000,3000,4000,5000]},
+  // Hubble: logo / name open the Gyftr page; the card buttons open the Hubble app, or the Hubble website (go) if the app is not installed.
+  {name:'Hubble', domain:'myhubble.money', home:'https://www.gyftr.com/sony-playstation', go:'https://www.myhubble.money/gift-cards/playstation', viaApp:true, appHeader:false},
+  {name:'Rooter', viaApp:true, home:'https://shop.rooter.gg/product/playstation-gift-cards', appUrl:'https://rooter.app.link/8AtvnFV0u6b', dens:[1000,2000,3000,4000,5000]},
   {name:'Games The Shop', home:'https://www.gamestheshop.com/search?q=psn', dens:[1000,2000,3000,4000,5000], urls:{
     1000:'https://www.gamestheshop.com/product/2153a461-7203-4802-aac4-283be4c775d3?variant=09df672e-b598-4b2d-9b3e-e1ca1dd9d205',
     2000:'https://www.gamestheshop.com/product/d117bc23-1c4b-4330-b7f3-f90c71d9a5b3?variant=cb05d659-beac-47d7-85ff-8bfed95f47cf',
@@ -53,7 +57,7 @@ const LINKS = [
   LINKS.forEach(L=>{
     let p=PLATFORMS.find(x=>x.name.toLowerCase()===L.name.toLowerCase());
     if(!p){p={name:L.name,items:[]};PLATFORMS.push(p)}
-    ['domain','logo','home','app'].forEach(k=>{if(L[k])p[k]=L[k]});
+    ['domain','logo','home','go','app','appUrl','viaApp','appHeader'].forEach(k=>{if(k in L){if(L[k]===null||L[k]===undefined)delete p[k];else p[k]=L[k]}});
     if(L.dens){
       const old=new Map(p.items.filter(i=>typeof i.v==='number').map(i=>[i.v,i]));
       const extra=p.items.filter(i=>typeof i.v!=='number');

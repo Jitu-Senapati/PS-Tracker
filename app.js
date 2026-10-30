@@ -43,11 +43,11 @@ function renderPlatforms(flash){
   $('platforms').innerHTML=orderedPlatforms().map((p,i)=>{
     const n=p.items.filter(x=>x.s).length;
     return `<article class="card" data-name="${p.name}" style="${flash?'animation:none;opacity:1':`animation-delay:${i*70}ms`}">
-      <div class="ch">${p.home?`<a class="chl" href="${p.home}" target="_blank" rel="noopener noreferrer" draggable="false" title="Open ${p.name}">`:'<div class="chl">'}<div class="logo">${logoOf(p)}</div>
+      <div class="ch">${p.home?`<a class="chl" href="${p.home}" target="_blank" rel="noopener noreferrer" draggable="false"${p.viaApp&&p.appHeader!==false?` data-app-url="${p.appUrl||p.home}"`:''} title="Open ${p.name}">`:'<div class="chl">'}<div class="logo">${logoOf(p)}</div>
         <div><h3>${p.name}</h3><small>${p.items.filter(x=>!x.label).length} denominations${p.items.some(x=>x.label)?" + custom":""}</small></div>${p.home?'</a>':'</div>'}
         <span class="tag ${n?'':'off'}">${n?n+' in stock':'Unavailable'}</span></div>
       <div class="chips">${p.items.map(it=>{const k=p.name+'-'+it.v;return `
-        <a class="chip ${it.s?'':'out'}" draggable="false" ${(it.u||p.home)?`href="${it.u||p.home}" target="_blank" rel="noopener noreferrer"`:''}${p.app&&!it.u?` data-app="${p.app}"`:''} data-ripple>
+        <a class="chip ${it.s?'':'out'}" draggable="false" ${(it.u||p.go||p.home)?`href="${it.u||p.go||p.home}" target="_blank" rel="noopener noreferrer"`:''}${p.app&&!it.u?` data-app="${p.app}"`:''}${p.viaApp&&(it.u||p.go||p.home)?` data-app-url="${p.appUrl||it.u||p.go||p.home}"`:''} data-ripple>
           <span class="v">${it.label||fmt(it.v)}</span>
           ${it.d?`<span class="d ${it.d>0?'up':'down'}">${it.d>0?'+':''}${it.d}</span>`:''}
           ${it.p?`<span class="p">&#8377;${fmt(it.p)}</span>`:''}
@@ -155,6 +155,16 @@ function openApp(app,web){
   setTimeout(()=>{document.removeEventListener('visibilitychange',mark);if(!left&&!document.hidden&&web)window.open(web,'_blank','noopener')},1400);
 }
 grid.addEventListener('click',e=>{const a=e.target.closest('a[data-app]');if(!a)return;e.preventDefault();openApp(a.dataset.app,a.getAttribute('href'))});
+// Android: hand the link to the installed app (or installed PWA) that handles it; Chrome opens the website if there is none.
+const isAndroid=/Android/i.test(navigator.userAgent);
+function intentUrl(appUrl,web){
+  try{const u=new URL(appUrl);return `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=${u.protocol.replace(':','')};S.browser_fallback_url=${encodeURIComponent(web)};end`}catch(e){return null}
+}
+grid.addEventListener('click',e=>{
+  const a=e.target.closest('a[data-app-url]');if(!a||!isAndroid)return;
+  const url=intentUrl(a.dataset.appUrl,a.getAttribute('href'));if(!url)return;
+  e.preventDefault();location.href=url;
+});
 grid.addEventListener('dragstart',e=>e.preventDefault());
 grid.addEventListener('contextmenu',e=>{if(DG||Date.now()<dsuppress)e.preventDefault()});
 
