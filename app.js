@@ -47,7 +47,7 @@ function renderPlatforms(flash){
         <div><h3>${p.name}</h3><small>${p.items.filter(x=>!x.label).length} denominations${p.items.some(x=>x.label)?" + custom":""}</small></div>${p.home?'</a>':'</div>'}
         <span class="tag ${n?'':'off'}">${n?n+' in stock':'Unavailable'}</span></div>
       <div class="chips">${p.items.map(it=>{const k=p.name+'-'+it.v;return `
-        <a class="chip ${it.s?'':'out'}" draggable="false" ${(it.u||p.home)?`href="${it.u||p.home}" target="_blank" rel="noopener noreferrer"`:''} data-ripple>
+        <a class="chip ${it.s?'':'out'}" draggable="false" ${(it.u||p.home)?`href="${it.u||p.home}" target="_blank" rel="noopener noreferrer"`:''}${p.app&&!it.u?` data-app="${p.app}"`:''} data-ripple>
           <span class="v">${it.label||fmt(it.v)}</span>
           ${it.d?`<span class="d ${it.d>0?'up':'down'}">${it.d>0?'+':''}${it.d}</span>`:''}
           ${it.p?`<span class="p">&#8377;${fmt(it.p)}</span>`:''}
@@ -147,6 +147,14 @@ grid.addEventListener('pointerdown',e=>{
 });
 grid.addEventListener('touchmove',e=>{if(DG&&DG.state!=='wait'&&e.cancelable)e.preventDefault()},{passive:false});
 grid.addEventListener('click',e=>{if(Date.now()<dsuppress){e.preventDefault();e.stopPropagation()}},true);
+// Cards of platforms that live in an app (Paytm...): try the app first, open the web link if the app does not open.
+function openApp(app,web){
+  let left=false;const mark=()=>{left=true};
+  document.addEventListener('visibilitychange',mark,{once:true});addEventListener('pagehide',mark,{once:true});
+  location.href=app;
+  setTimeout(()=>{document.removeEventListener('visibilitychange',mark);if(!left&&!document.hidden&&web)window.open(web,'_blank','noopener')},1400);
+}
+grid.addEventListener('click',e=>{const a=e.target.closest('a[data-app]');if(!a)return;e.preventDefault();openApp(a.dataset.app,a.getAttribute('href'))});
 grid.addEventListener('dragstart',e=>e.preventDefault());
 grid.addEventListener('contextmenu',e=>{if(DG||Date.now()<dsuppress)e.preventDefault()});
 
