@@ -29,7 +29,7 @@ const LINKS = [
   {name:'Paytm', appIntent:{scheme:'paytmmp',pkg:'net.one97.paytm'}, home:'https://paytm.com/', dens:[1000,2000,5000]},
   {name:'Gyftr', home:'https://www.gyftr.com/sony-playstation', dens:[1000,2000,3000,4000,5000]},
   // Hubble: logo / name open the Gyftr page; the card buttons open the Hubble app, or the Hubble website (go) if the app is not installed.
-  {name:'Hubble', domain:'myhubble.money', home:'https://www.gyftr.com/sony-playstation', go:'https://www.myhubble.money/gift-cards/playstation'},
+  {name:'Hubble', domain:'myhubble.money', home:'https://www.myhubble.money/gift-cards/playstation', go:'https://www.myhubble.money/gift-cards/playstation'},
   {name:'Rooter', viaApp:true, home:'https://shop.rooter.gg/product/playstation-gift-cards', appUrl:'https://rooter.app.link/8AtvnFV0u6b', dens:[1000,2000,3000,4000,5000]},
   {name:'Games The Shop', home:'https://www.gamestheshop.com/search?q=psn', dens:[1000,2000,3000,4000,5000], urls:{
     1000:'https://www.gamestheshop.com/product/2153a461-7203-4802-aac4-283be4c775d3?variant=09df672e-b598-4b2d-9b3e-e1ca1dd9d205',
