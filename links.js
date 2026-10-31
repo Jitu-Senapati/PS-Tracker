@@ -25,7 +25,7 @@ const LINKS = [
     4000:'https://e2zstore.com/product/rs-4000-playstation-network-wallet-top-up/',
     5000:'https://e2zstore.com/product/rs-5000-playstation-network-wallet-top-up/'}},
   // PhonePe / Paytm: you search for PlayStation inside the app. viaApp opens the installed app (Android) if it handles the link, otherwise the website.
-  {name:'PhonePe', appIntent:{scheme:'phonepe',pkg:'com.phonepe.app'}, home:'https://www.phonepe.com/', dens:[1000,2000,3000,4000,5000]},
+  {name:'PhonePe', appIntent:{scheme:'phonepe',pkg:'com.phonepe.app',path:'home'}, home:'https://www.phonepe.com/', dens:[1000,2000,3000,4000,5000]},
   {name:'Paytm', appIntent:{scheme:'paytmmp',pkg:'net.one97.paytm'}, home:'https://paytm.com/', dens:[1000,2000,5000]},
   {name:'Gyftr', home:'https://www.gyftr.com/sony-playstation', dens:[1000,2000,3000,4000,5000]},
   // Hubble: logo / name open the Gyftr page; the card buttons open the Hubble app, or the Hubble website (go) if the app is not installed.

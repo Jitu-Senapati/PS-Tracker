@@ -43,11 +43,11 @@ function renderPlatforms(flash){
   $('platforms').innerHTML=orderedPlatforms().map((p,i)=>{
     const n=p.items.filter(x=>x.s).length;
     return `<article class="card" data-name="${p.name}" style="${flash?'animation:none;opacity:1':`animation-delay:${i*70}ms`}">
-      <div class="ch">${p.home?`<a class="chl" href="${p.home}" target="_blank" rel="noopener noreferrer" draggable="false"${p.viaApp&&p.appHeader!==false?` data-app-url="${p.appUrl||p.home}"`:''}${p.appIntent&&p.appHeader!==false?` data-intent="${p.appIntent.scheme}|${p.appIntent.pkg}"`:''} title="Open ${p.name}">`:'<div class="chl">'}<div class="logo">${logoOf(p)}</div>
+      <div class="ch">${p.home?`<a class="chl" href="${p.home}" target="_blank" rel="noopener noreferrer" draggable="false"${p.viaApp&&p.appHeader!==false?` data-app-url="${p.appUrl||p.home}"`:''}${p.appIntent&&p.appHeader!==false?` data-intent="${p.appIntent.scheme}|${p.appIntent.pkg}|${p.appIntent.path||''}"`:''} title="Open ${p.name}">`:'<div class="chl">'}<div class="logo">${logoOf(p)}</div>
         <div><h3>${p.name}</h3><small>${p.items.filter(x=>!x.label).length} denominations${p.items.some(x=>x.label)?" + custom":""}</small></div>${p.home?'</a>':'</div>'}
         <span class="tag ${n?'':'off'}">${n?n+' in stock':'Unavailable'}</span></div>
       <div class="chips">${p.items.map(it=>{const k=p.name+'-'+it.v;return `
-        <a class="chip ${it.s?'':'out'}" draggable="false" ${(it.u||p.go||p.home)?`href="${it.u||p.go||p.home}" target="_blank" rel="noopener noreferrer"`:''}${p.app&&!it.u?` data-app="${p.app}"`:''}${p.viaApp&&(it.u||p.go||p.home)?` data-app-url="${p.appUrl||it.u||p.go||p.home}"`:''}${p.appIntent&&(it.u||p.go||p.home)?` data-intent="${p.appIntent.scheme}|${p.appIntent.pkg}"`:''} data-ripple>
+        <a class="chip ${it.s?'':'out'}" draggable="false" ${(it.u||p.go||p.home)?`href="${it.u||p.go||p.home}" target="_blank" rel="noopener noreferrer"`:''}${p.app&&!it.u?` data-app="${p.app}"`:''}${p.viaApp&&(it.u||p.go||p.home)?` data-app-url="${p.appUrl||it.u||p.go||p.home}"`:''}${p.appIntent&&(it.u||p.go||p.home)?` data-intent="${p.appIntent.scheme}|${p.appIntent.pkg}|${p.appIntent.path||''}"`:''} data-ripple>
           <span class="v">${it.label||fmt(it.v)}</span>
           ${it.d?`<span class="d ${it.d>0?'up':'down'}">${it.d>0?'+':''}${it.d}</span>`:''}
           ${it.p?`<span class="p">&#8377;${fmt(it.p)}</span>`:''}
@@ -168,8 +168,8 @@ grid.addEventListener('click',e=>{
 // Android: open an installed app by its own address (e.g. paytmmp://) through Android; the website opens if the app is not installed.
 grid.addEventListener('click',e=>{
   const a=e.target.closest('a[data-intent]');if(!a||!isAndroid)return;
-  const [scheme,pkg]=a.dataset.intent.split('|'),web=a.getAttribute('href');
-  e.preventDefault();location.href=`intent://#Intent;scheme=${scheme};package=${pkg};S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  const [scheme,pkg,path]=a.dataset.intent.split('|'),web=a.getAttribute('href');
+  e.preventDefault();location.href=`intent://${path||''}#Intent;scheme=${scheme};package=${pkg};S.browser_fallback_url=${encodeURIComponent(web)};end`;
 });
 grid.addEventListener('dragstart',e=>e.preventDefault());
 grid.addEventListener('contextmenu',e=>{if(DG||Date.now()<dsuppress)e.preventDefault()});
