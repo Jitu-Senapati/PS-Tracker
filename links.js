@@ -51,6 +51,8 @@ const LINKS = [
     3000:'https://blinkit.com/prn/sony-playstation-instant-voucher/prid/698594',
     4000:'https://blinkit.com/prn/sony-playstation-instant-voucher/prid/699135',
     5000:'https://blinkit.com/prn/sony-playstation-instant-voucher/prid/698592'}},
+  // Woohoo: opens the Woohoo app (com.giftbig.mobile) with the PlayStation page; the website opens if the app is not installed or cannot show the page.
+  {name:'Woohoo', domain:'woohoo.in', appIntent:{scheme:'https',pkg:'com.giftbig.mobile',path:'www.woohoo.in/playstation-e-gift-instant-voucher'}, home:'https://www.woohoo.in/playstation-e-gift-instant-voucher', dens:[1000,2000,3000,4000,5000]},
 ];
 
 (function applyLinks(){
