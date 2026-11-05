@@ -1,10 +1,10 @@
 // Service worker: lets the app install and open offline. Live data (/api) is never cached.
-const V = "pst-v2", IMG = "pst-img-v1";
+const V = "pst-v3", IMG = "pst-img-v1";
 const SHELL = ["./", "index.html", "style.css", "book.css", "trend.css", "data.js", "links.js", "app.js", "book.js", "trend.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/favicon.svg"];
 
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(V).then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => {})))).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys()
