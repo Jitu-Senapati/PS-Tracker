@@ -9,8 +9,8 @@ const ASIN = { 1000: "B07K6RYVHR", 2000: "B093QF35KZ", 3000: "B07K6PVR8B", 4000:
 const AMOUNTS = [1000, 2000, 3000, 4000, 5000];
 const link = (a) => `https://www.amazon.in/dp/${ASIN[a]}`;
 const UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
-const EVERY_MS = 4 * 60 * 1000;           // one round about every 4 minutes
-const JITTER_MS = 60 * 1000;              // plus 0-60 seconds random
+const EVERY_MS = 5 * 60 * 1000;           // one round every 5 minutes
+const JITTER_MS = 30 * 1000;              // plus 0-30 seconds random
 const GAP_MS = 6000;                      // pause between the two requests of a round
 const BACKOFF_MS = [30, 60, 120].map((m) => m * 60 * 1000); // robot check: wait 30, then 60, then 120 minutes
 const REMIND_MS = 20 * 60 * 1000;         // while still in stock, remind every 20 minutes
