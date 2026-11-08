@@ -1,9 +1,10 @@
-// amazonwatch.mjs (v2, gentle) - READ-ONLY. Watches Amazon.in PlayStation gift cards 1000-5000.
-// Uses ONE search page (covers 2000-5000) + the 1000 product page, every ~4 minutes,
+// amazonwatch.mjs (v3, gentle) - READ-ONLY. Watches Amazon.in PlayStation gift cards 1000-5000.
+// Uses ONE search page (covers 2000-5000) + the 1000 product page, every 5 minutes,
 // and backs off for a long time if Amazon shows a robot check. Never logs in, never buys.
 // Run:  node --env-file=.env amazonwatch.mjs
 import fs from "node:fs";
 
+const PLATFORM = "Amazon";
 const SEARCH = "https://www.amazon.in/s?k=Sony+PlayStation+Store+Gift+Card&i=videogames&rh=n%3A976460031%2Cp_n_availability%3A1318485031%2Cp_123%3A10806812&dc&ds=v1%3AOULhepWC0Z8i%2BOQIPyiH%2F3iAlg4mgH49lstMYHBGVIA&crid=2TQ370Q31W3KV&qid=1793281741&rnid=215263484031&sprefix=sony+playstation+store+gift+card%2Cvideogames%2C327&ref=sr_nr_p_country_of_origin-bin_1";
 const ASIN = { 1000: "B07K6RYVHR", 2000: "B093QF35KZ", 3000: "B07K6PVR8B", 4000: "B07K6RYVJ5", 5000: "B0B3DDW7TB" };
 const AMOUNTS = [1000, 2000, 3000, 4000, 5000];
@@ -11,12 +12,35 @@ const link = (a) => `https://www.amazon.in/dp/${ASIN[a]}`;
 const UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
 const EVERY_MS = 5 * 60 * 1000;           // one round every 5 minutes
 const JITTER_MS = 30 * 1000;              // plus 0-30 seconds random
-const GAP_MS = 6000;                      // pause between the two requests of a round
+const GAP_MS = 6000;                      // pause between requests
 const BACKOFF_MS = [30, 60, 120].map((m) => m * 60 * 1000); // robot check: wait 30, then 60, then 120 minutes
-const REMIND_MS = 20 * 60 * 1000;         // while still in stock, remind every 20 minutes
 const HEARTBEAT_MS = 6 * 60 * 60 * 1000;  // "I'm alive" every 6 hours
+const RESET_AFTER = 1;                    // window closes after 1 round with no stock
 const STATE_FILE = new URL("./amazon-state.json", import.meta.url).pathname;
 const ROBOT = /enter the characters you see|api-services-support@amazon|not a robot|automated access/i;
+
+// ---- Notification rules (same in every watcher) ----
+// One "window" per platform. It opens on the first stock, alerts at once, then:
+//  - a NEW amount appearing inside the window alerts at once (the 20-minute timer is NOT reset),
+//  - otherwise a reminder goes out every 20 minutes counted from the window's first alert,
+//  - the window closes after the platform has had no stock for `resetAfter` checks in a row.
+const REMIND_MS = 20 * 60 * 1000;
+function decide(st, avail, anyUnknown, now, resetAfter) {
+  st.win ??= 0; st.known ??= []; st.next ??= 0; st.empty ??= 0;
+  if (avail.length === 0) {
+    if (!anyUnknown) { st.empty++; if (st.empty >= resetAfter) { st.win = 0; st.known = []; st.next = 0; } }
+    return false;
+  }
+  st.empty = 0;
+  if (!st.win) { st.win = now; st.next = now + REMIND_MS; st.known = [...avail]; return true; }
+  let notify = false;
+  if (avail.some((a) => !st.known.includes(a))) { notify = true; st.known = [...new Set([...st.known, ...avail])]; }
+  if (now >= st.next) { notify = true; while (st.next <= now) st.next += REMIND_MS; }
+  return notify;
+}
+const amtText = (a) => (a === 0 ? "check the page" : "₹" + a);
+const availLine = (avail) => "Available: " + [...avail].sort((x, y) => x - y).map(amtText).join(" ");
+// ---- end of notification rules ----
 
 const textOf = (h) => h.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&#8377;|&#x20b9;/gi, "₹").replace(/\s+/g, " ").trim();
 
@@ -74,13 +98,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   let state = {};
   try { state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8")); } catch {}
-  state.pages ??= {}; state.lastBeat ??= 0; state.blocks ??= 0; state.warnedBlock ??= false;
+  state.lastBeat ??= 0; state.blocks ??= 0; state.warnedBlock ??= false; state.bad ??= {}; state.warned ??= {};
   const save = () => { try { fs.writeFileSync(STATE_FILE, JSON.stringify(state)); } catch {} };
 
-  // Returns true if Amazon showed a robot check this round.
+  // Returns the number of ms to wait if Amazon showed a robot check, else 0.
   const round = async (first) => {
     const now = Date.now();
-    const found = {}; let robot = false; let bad = 0;
+    const found = {}; let robot = false;
 
     const s = await get(SEARCH);
     const sr = s.status === 200 ? readSearch(s.html) : { cards: {} };
@@ -94,45 +118,41 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (robot) {
       state.blocks++;
       const wait = BACKOFF_MS[Math.min(state.blocks - 1, BACKOFF_MS.length - 1)];
-      if (!state.warnedBlock) { state.warnedBlock = true; await send(`⚠️ Amazon is showing a robot check. Pausing Amazon checks for ${wait / 60000} minutes, then trying again slowly.`); }
+      if (!state.warnedBlock) { state.warnedBlock = true; await send(`⚠️ ${PLATFORM} is showing a robot check. Pausing ${PLATFORM} checks for ${wait / 60000} minutes, then trying again slowly.`); }
       log("robot check, pausing", wait / 60000, "min");
       save();
       return wait;
     }
     state.blocks = 0;
-    if (state.warnedBlock) { state.warnedBlock = false; await send("✅ Amazon checks are working again."); }
+    if (state.warnedBlock) { state.warnedBlock = false; await send(`✅ ${PLATFORM} checks are working again.`); }
 
-    const summary = [];
+    const summary = []; const avail = []; let anyUnknown = false; const prices = {};
     for (const a of AMOUNTS) {
-      const p = (state.pages[a] ??= { s: "out", bad: 0, lastAlert: 0, warned: false });
       let r = found[a] || { s: "unknown" };
-      summary.push(`${a}:${r.s}`);
+      let label = null;
+      // The search page says "in": confirm on the product page before counting it (only for amounts not already alerted).
+      if (r.s === "in" && a !== 1000 && !(state.known || []).includes(a)) {
+        await sleep(GAP_MS);
+        const c = await get(link(a));
+        const cr = c.status === 200 ? readProduct(c.html) : { s: "unknown" };
+        if (cr.robot) r = { s: "unknown" };
+        else if (cr.s === "out") { r = { s: "out" }; label = "out(recheck)"; }
+        else if (cr.price) r = { ...r, price: cr.price };
+      }
+      summary.push(`${a}:${label || r.s}`);
+      if (r.s === "in") { avail.push(a); prices[a] = r.price || ""; }
       if (r.s === "unknown") {
-        p.bad++;
-        if (p.bad >= 5 && !p.warned) { p.warned = true; await send(`⚠️ Amazon ₹${a}: could not read this card ${p.bad} times in a row.`); }
-        continue;
-      }
-      p.bad = 0; p.warned = false;
-      if (r.s === "in" && (p.s !== "in" || now - p.lastAlert > REMIND_MS)) {
-        let note = "";
-        if (a !== 1000) { // double-check on the product page before alerting
-          await sleep(GAP_MS);
-          const c = await get(link(a));
-          const cr = c.status === 200 ? readProduct(c.html) : { s: "unknown" };
-          if (cr.s === "out") { summary[summary.length - 1] = `${a}:out(recheck)`; p.s = "out"; continue; }
-          if (cr.s === "unknown") note = " (search shows a price; product page not confirmed)";
-          if (cr.price) r = { ...r, price: cr.price };
-        }
-        await send(`🟢 Amazon: PlayStation ₹${a} looks IN STOCK ${r.price || ""}${note}\n${link(a)}`);
-        p.lastAlert = now;
-      } else if (r.s === "out" && p.s === "in") {
-        await send(`🔴 Amazon ₹${a}: unavailable again`);
-      }
-      p.s = r.s;
+        anyUnknown = true;
+        state.bad[a] = (state.bad[a] || 0) + 1;
+        if (state.bad[a] >= 5 && !state.warned[a]) { state.warned[a] = true; await send(`⚠️ ${PLATFORM} ₹${a}: could not read this card ${state.bad[a]} times in a row.`); }
+      } else { state.bad[a] = 0; state.warned[a] = false; }
+    }
+    if (decide(state, avail, anyUnknown, now, RESET_AFTER)) {
+      await send(`🟢 ${PLATFORM}: in stock now\n${availLine(avail)}\n` + avail.map((a) => `₹${a} ${prices[a] || ""} ${link(a)}`.replace(/\s+/g, " ")).join("\n"));
     }
     log(summary.join("  "));
     if (first || now - state.lastBeat > HEARTBEAT_MS) {
-      await send(`✅ Amazon watcher ${first ? "started" : "is running"}. ` + summary.join("  "));
+      await send(`✅ ${PLATFORM} watcher ${first ? "started" : "is running"}. ` + summary.join("  "));
       state.lastBeat = now;
     }
     save();

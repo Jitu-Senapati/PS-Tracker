@@ -1,19 +1,42 @@
-// stanwatch.mjs (v2) - READ-ONLY. Watches the Stan Shop PlayStation page (one page, 4 amount cards)
-// and sends Telegram alerts per amount. Never logs in, never buys.
-// Run:  node --env-file=.env stanwatch.mjs
+// stanwatch.mjs (v3) - READ-ONLY. Watches the Stan Shop PlayStation page (one page, 4 amount cards).
+// Never logs in, never buys. Run:  node --env-file=.env stanwatch.mjs
 import fs from "node:fs";
 
+const PLATFORM = "Stan Shop";
 const AMOUNTS = [1000, 2000, 3000, 4000];
 const link = (a) => `https://www.stanshop.co/playstation-psn-gift-card-in-india-${a}-inr`;
 const UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36";
 const EVERY_MS = 60 * 1000;               // one check about every minute
 const JITTER_MS = 15 * 1000;              // plus 0-15 seconds random
-const REMIND_MS = 20 * 60 * 1000;         // while still in stock, remind every 20 minutes
 const HEARTBEAT_MS = 6 * 60 * 60 * 1000;  // "I'm alive" every 6 hours
 const WARN_AFTER = 5;                     // warn after this many unreadable rounds in a row
+const RESET_AFTER = 2;                    // window closes after 2 checks in a row with no stock
 const STATE_FILE = new URL("./stan-state.json", import.meta.url).pathname;
 
-// Reads the page text. Each card looks like:  [SOLD OUT] ₹ 1,000 Coupon Worth ₹1000
+// ---- Notification rules (same in every watcher) ----
+// One "window" per platform. It opens on the first stock, alerts at once, then:
+//  - a NEW amount appearing inside the window alerts at once (the 20-minute timer is NOT reset),
+//  - otherwise a reminder goes out every 20 minutes counted from the window's first alert,
+//  - the window closes after the platform has had no stock for `resetAfter` checks in a row.
+const REMIND_MS = 20 * 60 * 1000;
+function decide(st, avail, anyUnknown, now, resetAfter) {
+  st.win ??= 0; st.known ??= []; st.next ??= 0; st.empty ??= 0;
+  if (avail.length === 0) {
+    if (!anyUnknown) { st.empty++; if (st.empty >= resetAfter) { st.win = 0; st.known = []; st.next = 0; } }
+    return false;
+  }
+  st.empty = 0;
+  if (!st.win) { st.win = now; st.next = now + REMIND_MS; st.known = [...avail]; return true; }
+  let notify = false;
+  if (avail.some((a) => !st.known.includes(a))) { notify = true; st.known = [...new Set([...st.known, ...avail])]; }
+  if (now >= st.next) { notify = true; while (st.next <= now) st.next += REMIND_MS; }
+  return notify;
+}
+const amtText = (a) => (a === 0 ? "check the page" : "₹" + a);
+const availLine = (avail) => "Available: " + [...avail].sort((x, y) => x - y).map(amtText).join(" ");
+// ---- end of notification rules ----
+
+// Each card looks like:  [SOLD OUT] ₹ 1,000 Coupon Worth ₹1000
 // A card with the SOLD OUT ribbon is "out". A card without it is "in". A card not found is "unknown".
 export function readCards(html) {
   const text = html
@@ -53,30 +76,25 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   let state = {};
   try { state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8")); } catch {}
-  state.pages ??= {}; state.lastBeat ??= 0;
+  state.lastBeat ??= 0; state.bad ??= 0; state.warned ??= false;
   const save = () => { try { fs.writeFileSync(STATE_FILE, JSON.stringify(state)); } catch {} };
 
   const round = async (first) => {
     const now = Date.now();
     const cards = await fetchCards();
-    const summary = [];
-    for (const a of AMOUNTS) {
-      const p = (state.pages[a] ??= { s: "out", bad: 0, lastAlert: 0, warned: false });
-      const s = cards ? cards[a] : "unknown";
-      summary.push(`${a}:${s}`);
-      if (s === "unknown") {
-        p.bad++;
-        if (p.bad >= WARN_AFTER && !p.warned) { p.warned = true; await send(`⚠️ Stan Shop ₹${a}: could not read this card ${p.bad} times in a row.`); }
-        continue;
+    const summary = AMOUNTS.map((a) => `${a}:${cards ? cards[a] : "unknown"}`);
+    const unreadable = !cards || AMOUNTS.every((a) => cards[a] === "unknown");
+    if (unreadable) {
+      state.bad++;
+      if (state.bad >= WARN_AFTER && !state.warned) { state.warned = true; await send(`⚠️ ${PLATFORM}: could not read the page ${state.bad} times in a row.`); }
+    } else { state.bad = 0; state.warned = false; }
+
+    if (!unreadable) {
+      const avail = AMOUNTS.filter((a) => cards[a] === "in");
+      const anyUnknown = AMOUNTS.some((a) => cards[a] === "unknown");
+      if (decide(state, avail, anyUnknown, now, RESET_AFTER)) {
+        await send(`🟢 ${PLATFORM}: in stock now\n${availLine(avail)}\n${link(avail[0])}`);
       }
-      p.bad = 0; p.warned = false;
-      if (s === "in" && (p.s !== "in" || now - p.lastAlert > REMIND_MS)) {
-        await send(`🟢 Stan Shop: PlayStation ₹${a} looks IN STOCK\n${link(a)}`);
-        p.lastAlert = now;
-      } else if (s === "out" && p.s === "in") {
-        await send(`🔴 Stan Shop ₹${a}: sold out again`);
-      }
-      p.s = s;
     }
     log(summary.join("  "));
     if (first || now - state.lastBeat > HEARTBEAT_MS) {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E2Z PSN India watcher
 // @namespace    ps-tracker
-// @version      1.0
+// @version      1.1
 // @description  Reloads the E2Z PSN India page and sends a Telegram message when products appear. Read-only: never logs in, never buys.
 // @match        https://e2zstore.com/category/psn-india/*
 // @match        https://www.e2zstore.com/category/psn-india/*
@@ -15,11 +15,36 @@
 (function () {
   "use strict";
 
-  const CHECK_EVERY_MS = 60 * 1000;       // reload about every minute
-  const JITTER_MS = 20 * 1000;            // plus 0-20 seconds random, so it is not robotic
-  const SETTLE_MS = 6 * 1000;             // wait for the page to finish drawing before checking
-  const REMIND_MS = 20 * 60 * 1000;       // while still in stock, remind every 20 minutes
+  const PLATFORM = "E2Z Store";
+  const WANT = [1000, 2000, 3000, 4000, 5000]; // only these amounts are reported
+  const CHECK_EVERY_MS = 60 * 1000;        // reload about every minute
+  const JITTER_MS = 20 * 1000;             // plus 0-20 seconds random
+  const SETTLE_MS = 6 * 1000;              // wait for the page to finish drawing before checking
   const HEARTBEAT_MS = 6 * 60 * 60 * 1000; // "I'm alive" message every 6 hours
+  const RESET_AFTER = 2;                   // window closes after 2 checks in a row with no stock
+
+  // ---- Notification rules (same in every watcher) ----
+  // One "window" per platform. It opens on the first stock, alerts at once, then:
+  //  - a NEW amount appearing inside the window alerts at once (the 20-minute timer is NOT reset),
+  //  - otherwise a reminder goes out every 20 minutes counted from the window's first alert,
+  //  - the window closes after the platform has had no stock for `resetAfter` checks in a row.
+  const REMIND_MS = 20 * 60 * 1000;
+  function decide(st, avail, anyUnknown, now, resetAfter) {
+    st.win ??= 0; st.known ??= []; st.next ??= 0; st.empty ??= 0;
+    if (avail.length === 0) {
+      if (!anyUnknown) { st.empty++; if (st.empty >= resetAfter) { st.win = 0; st.known = []; st.next = 0; } }
+      return false;
+    }
+    st.empty = 0;
+    if (!st.win) { st.win = now; st.next = now + REMIND_MS; st.known = [...avail]; return true; }
+    let notify = false;
+    if (avail.some((a) => !st.known.includes(a))) { notify = true; st.known = [...new Set([...st.known, ...avail])]; }
+    if (now >= st.next) { notify = true; while (st.next <= now) st.next += REMIND_MS; }
+    return notify;
+  }
+  const amtText = (a) => (a === 0 ? "check the page" : "₹" + a);
+  const availLine = (avail) => "Available: " + [...avail].sort((x, y) => x - y).map(amtText).join(" ");
+  // ---- end of notification rules ----
 
   // Your Telegram details are asked once and saved inside Violentmonkey on this phone only.
   function getCreds() {
@@ -47,7 +72,12 @@
     });
   }
 
-  // Find products on the page that are NOT marked out of stock.
+  const amountOf = (name, price) => {
+    const m = (name || "").match(/Rs\.?\s*([\d,]+)/i) || (price || "").match(/([\d,]+)(?:\.\d+)?/);
+    return m ? Number(m[1].replace(/,/g, "")) : 0;
+  };
+
+  // Find products on the page that are NOT marked out of stock, keyed by link.
   function scan() {
     const found = new Map();
     const boxes = document.querySelectorAll("li.product, div.product, .product-small, .products .product");
@@ -60,14 +90,15 @@
       const name = ((nameEl ? nameEl.innerText : a ? a.innerText : "") || "").trim().slice(0, 80) || "Product";
       const priceEl = b.querySelector(".price");
       const price = priceEl ? priceEl.innerText.replace(/\s+/g, " ").trim() : "";
-      found.set(link, { name, price, link });
+      const amt = amountOf(name, price);
+      if (WANT.includes(amt)) found.set(link, { amt, name, link });
     });
     // Backup signal: a buy-type button exists even if the product boxes were not recognised.
-    if (found.size === 0) {
+    if (found.size === 0 && boxes.length === 0) {
       const btn = Array.from(document.querySelectorAll("a, button")).find((el) =>
         /^(add to cart|buy now|select options)/i.test((el.innerText || el.value || "").trim())
       );
-      if (btn) found.set(location.href, { name: "A buy button appeared on the page", price: "", link: location.href });
+      if (btn) found.set(location.href, { amt: 0, name: "A buy button appeared on the page", link: location.href });
     }
     return found;
   }
@@ -83,26 +114,24 @@
     if (/just a moment/i.test(document.title)) {
       const n = (GM_getValue("blocked", 0) || 0) + 1;
       GM_setValue("blocked", n);
-      if (n === 5) send("⚠️ E2Z watcher: stuck on the 'Just a moment' check for 5 tries in a row. Open Firefox and look at the screen.");
+      if (n === 5) send("⚠️ " + PLATFORM + ": stuck on the 'Just a moment' check 5 times in a row. Open Firefox and look at the screen.");
       return;
     }
     GM_setValue("blocked", 0);
 
     setTimeout(() => {
       const items = scan();
-      const prev = JSON.parse(GM_getValue("last_links", "[]"));
-      const fresh = Array.from(items.values()).filter((i) => !prev.includes(i.link));
-      const lastAlert = GM_getValue("last_alert", 0);
-
-      if (items.size > 0 && (fresh.length > 0 || now - lastAlert > REMIND_MS)) {
-        const lines = Array.from(items.values()).map((i) => "• " + i.name + (i.price ? " " + i.price : "") + "\n" + i.link);
-        send("🟢 E2Z PSN India: in stock now!\n\n" + lines.join("\n\n"));
-        GM_setValue("last_alert", now);
+      const avail = Array.from(new Set(Array.from(items.values()).map((i) => i.amt))).sort((x, y) => x - y);
+      let st = {};
+      try { st = JSON.parse(GM_getValue("win_state", "{}")); } catch (e) { st = {}; }
+      if (decide(st, avail, false, now, RESET_AFTER)) {
+        const lines = Array.from(items.values()).sort((x, y) => x.amt - y.amt).map((i) => (i.amt ? "₹" + i.amt : i.name) + " " + i.link);
+        send("🟢 " + PLATFORM + ": in stock now\n" + availLine(avail) + "\n" + lines.join("\n"));
       }
-      GM_setValue("last_links", JSON.stringify(Array.from(items.keys())));
+      GM_setValue("win_state", JSON.stringify(st));
 
       if (now - GM_getValue("last_beat", 0) > HEARTBEAT_MS) {
-        send("✅ E2Z watcher is running. " + (items.size ? items.size + " item(s) in stock." : "Nothing in stock right now."));
+        send("✅ E2Z watcher is running. " + (avail.length ? availLine(avail) : "Nothing in stock right now."));
         GM_setValue("last_beat", now);
       }
     }, SETTLE_MS);
