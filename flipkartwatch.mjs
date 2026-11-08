@@ -14,11 +14,11 @@ const GAP_MS = 5000;                      // pause between requests
 const SLOW_MS = 15 * 60 * 1000;           // after 3 unreadable rounds in a row, wait 15 minutes between tries
 const HEARTBEAT_MS = 6 * 60 * 60 * 1000;  // "I'm alive" every 6 hours
 const RESET_AFTER = 1;                    // window closes after 1 round with no stock
-const MAX_PAGES = 3;                      // search pages to read per round
 const MAX_CANDIDATES = 8;                 // never open more than this many listing pages per round
 const LINKS_PER_AMOUNT = 2;               // at most this many links per amount in an alert
 const STATE_FILE = new URL("./flipkart-state.json", import.meta.url).pathname;
-const pageUrl = (n) => (n === 1 ? SEARCH : SEARCH + "&page=" + n);
+const SORTED = SEARCH + "&sort=price_asc";
+const DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const NOT_AVAILABLE = /coming soon|currently unavailable|unavailable|sold out|out of stock|notify/i;
 
 // ---- Notification rules (same in every watcher) ----
@@ -124,9 +124,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       if (!r.ok) log("telegram error", r.status);
     } catch (e) { log("telegram failed", e.message); }
   };
-  const get = async (url) => {
+  const get = async (url, ua = UA) => {
     try {
-      const res = await fetch(url, { headers: { "User-Agent": UA, "Accept-Language": "en-IN,en;q=0.9", Accept: "text/html,application/xhtml+xml", Referer: "https://www.flipkart.com/" }, redirect: "follow", signal: AbortSignal.timeout(40000) });
+      const res = await fetch(url, { headers: { "User-Agent": ua, "Accept-Language": "en-IN,en;q=0.9", Accept: "text/html,application/xhtml+xml", Referer: "https://www.flipkart.com/" }, redirect: "follow", signal: AbortSignal.timeout(40000) });
       return { status: res.status, html: await res.text() };
     } catch { return { status: 0, html: "" }; }
   };
@@ -139,17 +139,19 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   // Returns ms to wait before the next round, or 0 for the normal pace.
   const round = async (first) => {
     const now = Date.now();
-    // Read search pages 1..MAX_PAGES (the page lists about 10 listings at a time); stop when a page adds nothing new.
+    // Read the search page sorted cheapest first (the 10 listings Flipkart sends include every 1000-5000 card).
+    // If the last of those 10 is still within range, more in-range listings may be hidden, so also read the desktop page.
     const all = new Map(); const counts = []; let status = 0;
-    for (let n = 1; n <= MAX_PAGES; n++) {
-      if (n > 1) await sleep(GAP_MS + Math.random() * 3000);
-      const s = await get(pageUrl(n)); status = s.status;
+    const sources = [{ name: "s1", url: SORTED, ua: UA }];
+    for (let i = 0; i < sources.length; i++) {
+      if (i > 0) await sleep(GAP_MS + Math.random() * 3000);
+      const src = sources[i];
+      const s = await get(src.url, src.ua); status = s.status;
       const parsed = s.status === 200 ? parseSearch(s.html) : null;
-      if (!parsed || parsed.total === 0) { counts.push(`p${n}:x`); break; }
-      let fresh = 0;
-      for (const l of parsed.listings) { const key = l.pid || l.url || l.title; if (!all.has(key)) { all.set(key, l); fresh++; } }
-      counts.push(`p${n}:${parsed.total}`);
-      if (fresh === 0) break;
+      if (!parsed || parsed.total === 0) { counts.push(`${src.name}:x`); continue; }
+      for (const l of parsed.listings) { const key = l.pid || l.url || l.title; if (!all.has(key)) all.set(key, l); }
+      counts.push(`${src.name}:${parsed.total}`);
+      if (i === 0 && Math.max(...parsed.listings.map((l) => l.amt)) <= 5000) sources.push({ name: "s2", url: SEARCH, ua: DESKTOP });
     }
     if (all.size === 0) {
       state.bad++;
