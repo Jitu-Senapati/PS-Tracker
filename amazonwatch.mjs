@@ -91,7 +91,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   };
   const get = async (url) => {
     try {
-      const res = await fetch(url, { headers: { "User-Agent": UA, "Accept-Language": "en-IN,en;q=0.9", Accept: "text/html,application/xhtml+xml", Referer: "https://www.amazon.in/", "Upgrade-Insecure-Requests": "1" }, redirect: "follow", signal: AbortSignal.timeout(25000) });
+      const res = await fetch(url, { headers: { "User-Agent": UA, "Accept-Language": "en-IN,en;q=0.9", Accept: "text/html,application/xhtml+xml", Referer: "https://www.amazon.in/", "Upgrade-Insecure-Requests": "1" }, redirect: "follow", signal: AbortSignal.timeout(40000) });
       return { status: res.status, html: await res.text() };
     } catch { return { status: 0, html: "" }; }
   };
@@ -139,6 +139,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         else if (cr.s === "out") { r = { s: "out" }; label = "out(recheck)"; }
         else if (cr.price) r = { ...r, price: cr.price };
       }
+      if (r.s === "unknown" && !label) label = a === 1000 ? "unknown(product page)" : `unknown(search http ${s.status}, ${Object.keys(sr.cards || {}).length} cards read)`;
       summary.push(`${a}:${label || r.s}`);
       if (r.s === "in") { avail.push(a); prices[a] = r.price || ""; }
       if (r.s === "unknown") {
