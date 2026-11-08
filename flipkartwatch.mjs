@@ -14,9 +14,11 @@ const GAP_MS = 5000;                      // pause between requests
 const SLOW_MS = 15 * 60 * 1000;           // after 3 unreadable rounds in a row, wait 15 minutes between tries
 const HEARTBEAT_MS = 6 * 60 * 60 * 1000;  // "I'm alive" every 6 hours
 const RESET_AFTER = 1;                    // window closes after 1 round with no stock
+const MAX_PAGES = 3;                      // search pages to read per round
 const MAX_CANDIDATES = 8;                 // never open more than this many listing pages per round
 const LINKS_PER_AMOUNT = 2;               // at most this many links per amount in an alert
 const STATE_FILE = new URL("./flipkart-state.json", import.meta.url).pathname;
+const pageUrl = (n) => (n === 1 ? SEARCH : SEARCH + "&page=" + n);
 const NOT_AVAILABLE = /coming soon|currently unavailable|unavailable|sold out|out of stock|notify/i;
 
 // ---- Notification rules (same in every watcher) ----
@@ -137,15 +139,26 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   // Returns ms to wait before the next round, or 0 for the normal pace.
   const round = async (first) => {
     const now = Date.now();
-    const s = await get(SEARCH);
-    const parsed = s.status === 200 ? parseSearch(s.html) : null;
-    if (!parsed || parsed.total === 0) {
+    // Read search pages 1..MAX_PAGES (the page lists about 10 listings at a time); stop when a page adds nothing new.
+    const all = new Map(); const counts = []; let status = 0;
+    for (let n = 1; n <= MAX_PAGES; n++) {
+      if (n > 1) await sleep(GAP_MS + Math.random() * 3000);
+      const s = await get(pageUrl(n)); status = s.status;
+      const parsed = s.status === 200 ? parseSearch(s.html) : null;
+      if (!parsed || parsed.total === 0) { counts.push(`p${n}:x`); break; }
+      let fresh = 0;
+      for (const l of parsed.listings) { const key = l.pid || l.url || l.title; if (!all.has(key)) { all.set(key, l); fresh++; } }
+      counts.push(`p${n}:${parsed.total}`);
+      if (fresh === 0) break;
+    }
+    if (all.size === 0) {
       state.bad++;
-      log(`could not read search page (http ${s.status}, ${state.bad} in a row)`);
-      if (state.bad >= 5 && !state.warned) { state.warned = true; await send(`⚠️ ${PLATFORM}: could not read the search page ${state.bad} times in a row (http ${s.status}).`); }
+      log(`could not read search page (http ${status}, ${state.bad} in a row)`);
+      if (state.bad >= 5 && !state.warned) { state.warned = true; await send(`⚠️ ${PLATFORM}: could not read the search page ${state.bad} times in a row (http ${status}).`); }
       save();
       return state.bad >= 3 ? SLOW_MS : 0;
     }
+    const parsed = { total: all.size, listings: [...all.values()] };
     state.bad = 0; state.warned = false;
 
     const inRange = parsed.listings.filter((l) => AMOUNTS.includes(l.amt));
@@ -163,7 +176,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       for (const a of avail) confirmed.filter((c) => c.amt === a).slice(0, LINKS_PER_AMOUNT).forEach((c) => lines.push(`₹${a} ${c.price} ${c.url}`.replace(/\s+/g, " ")));
       await send(`🟢 ${PLATFORM}: in stock now\n${availLine(avail)}\n${lines.join("\n")}`);
     }
-    const summary = `listings:${parsed.total} in-range:${inRange.length} candidates:${candidates.length} in-stock:${confirmed.length}`;
+    const summary = `${counts.join(" ")} listings:${parsed.total} in-range:${inRange.length} candidates:${candidates.length} in-stock:${confirmed.length}`;
     log(summary);
     if (first || now - state.lastBeat > HEARTBEAT_MS) {
       await send(`✅ ${PLATFORM} watcher ${first ? "started" : "is running"}. ${summary}`);
