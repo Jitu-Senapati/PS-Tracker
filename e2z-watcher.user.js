@@ -1,47 +1,47 @@
-// ==UserScript==
-// @name         E2Z PSN India watcher
-// @namespace    ps-tracker
-// @version      1.4
-// @description  Reloads the E2Z PSN India page and sends a Telegram message when products appear. Read-only: never logs in, never buys.
-// @match        https://e2zstore.com/category/psn-india/*
-// @match        https://www.e2zstore.com/category/psn-india/*
-// @grant        GM_xmlhttpRequest
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @connect      api.telegram.org
-// @run-at       document-idle
-// ==/UserScript==
-
-(function () {
-  "use strict";
-
-  const PLATFORM = "E2Z Store";
-  const WANT = [1000, 2000, 3000, 4000, 5000]; // only these amounts are reported
-  const CHECK_EVERY_MS = 60 * 1000;        // reload about every minute
-  const JITTER_MS = 20 * 1000;             // plus 0-20 seconds random
-  const SETTLE_MS = 6 * 1000;              // wait for the page to finish drawing before checking
-  const HEARTBEAT_MS = 6 * 60 * 60 * 1000; // "I'm alive" message every 6 hours
-  const RESET_AFTER = 2;                   // window closes after 2 checks in a row with no stock
-
-  // ---- Notification rules (same in every watcher) ----
-  // One "window" per platform. It opens on the first stock, alerts at once, then:
-  //  - a NEW amount appearing inside the window alerts at once (the 20-minute timer is NOT reset),
-  //  - otherwise a reminder goes out every 20 minutes counted from the window's first alert,
-  //  - the window closes after the platform has had no stock for `resetAfter` checks in a row.
-  const REMIND_MS = 20 * 60 * 1000;
-  function decide(st, avail, anyUnknown, now, resetAfter) {
-    st.win ??= 0; st.known ??= []; st.next ??= 0; st.empty ??= 0;
-    if (avail.length === 0) {
-      if (!anyUnknown) { st.empty++; if (st.empty >= resetAfter) { st.win = 0; st.known = []; st.next = 0; } }
-      return false;
-    }
-    st.empty = 0;
-    if (!st.win) { st.win = now; st.next = now + REMIND_MS; st.known = [...avail]; return true; }
-    let notify = false;
-    if (avail.some((a) => !st.known.includes(a))) { notify = true; st.known = [...new Set([...st.known, ...avail])]; }
-    if (now >= st.next) { notify = true; while (st.next <= now) st.next += REMIND_MS; }
-    return notify;
-  }
-  const amtText = (a) => (a === 0 ? "check the page" : "₹" + a);
   const availLine = (avail) => "Available: " + [...avail].sort((x, y) => x - y).map(amtText).join(" ");
   // ---- end of notification rules ----
+
+  // Your Telegram details are asked once and saved inside Violentmonkey on this phone only.
+  function getCreds() {
+    let token = GM_getValue("bot_token", "");
+    let chat = GM_getValue("chat_id", "");
+    if (!token) {
+      token = (prompt("Paste your Telegram BOT_TOKEN, then press OK") || "").trim();
+      if (token) GM_setValue("bot_token", token);
+    }
+    if (token && !chat) {
+      chat = (prompt("Paste your Telegram CHAT_ID, then press OK") || "").trim();
+      if (chat) GM_setValue("chat_id", chat);
+    }
+    // Optional extra chats (friends) that should also get the stock alerts. Asked once.
+    if (token && chat && GM_getValue("extra_set_v2", "") !== "1") {
+      const x = prompt("Extra Telegram chat ids that should also get STOCK ALERTS (friends), separated by commas, no spaces. Leave empty for none.", GM_getValue("extra_chats", "") || "");
+      if (x !== null) { // pressing Cancel keeps what was saved and asks again on the next page load
+        GM_setValue("extra_chats", (x || "").trim());
+        GM_setValue("extra_set_v2", "1");
+      }
+    }
+    return { token, chat };
+  }
+
+  // Stock alerts (they start with the green circle) go to you and the extra chats; status messages go to you only.
+  function send(text) {
+    const { token, chat } = getCreds();
+    if (!token || !chat) return;
+    const owner = chat.split(",")[0].trim();
+    const extra = (GM_getValue("extra_chats", "") || "").split(",").map((c) => c.trim()).filter(Boolean);
+    const targets = text.startsWith("🟢") ? Array.from(new Set([owner, ...extra])) : [owner];
+    targets.forEach((c) => {
+      GM_xmlhttpRequest({
+        method: "POST",
+        url: "https://api.telegram.org/bot" + token + "/sendMessage",
+        headers: { "Content-Type": "application/json" },
+        data: JSON.stringify({ chat_id: c, text: text.slice(0, 4000) }),
+      });
+    });
+  }
+
+  const amountOf = (name, price) => {
+    const m = (name || "").match(/Rs\.?\s*([\d,]+)/i) || (price || "").match(/([\d,]+)(?:\.\d+)?/);
+    return m ? Number(m[1].replace(/,/g, "")) : 0;
+  };
