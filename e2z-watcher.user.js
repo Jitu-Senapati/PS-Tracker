@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E2Z PSN India watcher
 // @namespace    ps-tracker
-// @version      1.3
+// @version      1.4
 // @description  Reloads the E2Z PSN India page and sends a Telegram message when products appear. Read-only: never logs in, never buys.
 // @match        https://e2zstore.com/category/psn-india/*
 // @match        https://www.e2zstore.com/category/psn-india/*
@@ -45,109 +45,3 @@
   const amtText = (a) => (a === 0 ? "check the page" : "₹" + a);
   const availLine = (avail) => "Available: " + [...avail].sort((x, y) => x - y).map(amtText).join(" ");
   // ---- end of notification rules ----
-
-  // Your Telegram details are asked once and saved inside Violentmonkey on this phone only.
-  function getCreds() {
-    let token = GM_getValue("bot_token", "");
-    let chat = GM_getValue("chat_id", "");
-    if (!token) {
-      token = (prompt("Paste your Telegram BOT_TOKEN, then press OK") || "").trim();
-      if (token) GM_setValue("bot_token", token);
-    }
-    if (token && !chat) {
-      chat = (prompt("Paste your Telegram CHAT_ID, then press OK") || "").trim();
-      if (chat) GM_setValue("chat_id", chat);
-    }
-    // Optional extra chats (friends) that should also get the stock alerts. Asked once.
-    if (token && chat && GM_getValue("extra_set_v1", "") !== "1") {
-      const x = prompt("Optional: extra Telegram chat ids that should also get STOCK ALERTS, separated by commas (for example 8954749392,6316533826). Leave empty for none.");
-      GM_setValue("extra_chats", (x || "").trim());
-      GM_setValue("extra_set_v1", "1");
-    }
-    return { token, chat };
-  }
-
-  // Stock alerts (they start with the green circle) go to you and the extra chats; status messages go to you only.
-  function send(text) {
-    const { token, chat } = getCreds();
-    if (!token || !chat) return;
-    const owner = chat.split(",")[0].trim();
-    const extra = (GM_getValue("extra_chats", "") || "").split(",").map((c) => c.trim()).filter(Boolean);
-    const targets = text.startsWith("🟢") ? Array.from(new Set([owner, ...extra])) : [owner];
-    targets.forEach((c) => {
-      GM_xmlhttpRequest({
-        method: "POST",
-        url: "https://api.telegram.org/bot" + token + "/sendMessage",
-        headers: { "Content-Type": "application/json" },
-        data: JSON.stringify({ chat_id: c, text: text.slice(0, 4000) }),
-      });
-    });
-  }
-
-  const amountOf = (name, price) => {
-    const m = (name || "").match(/Rs\.?\s*([\d,]+)/i) || (price || "").match(/([\d,]+)(?:\.\d+)?/);
-    return m ? Number(m[1].replace(/,/g, "")) : 0;
-  };
-
-  // Find products on the page that are NOT marked out of stock, keyed by link.
-  function scan() {
-    const found = new Map();
-    const boxes = document.querySelectorAll("li.product, div.product, .product-small, .products .product");
-    boxes.forEach((b) => {
-      const txt = (b.innerText || "").toLowerCase();
-      if (txt.includes("out of stock") || txt.includes("sold out")) return;
-      const a = b.querySelector("a[href*='/product/']") || b.querySelector("a[href]");
-      const link = a ? a.href : location.href;
-      const nameEl = b.querySelector(".woocommerce-loop-product__title, .product-title, .name, h2, h3");
-      const name = ((nameEl ? nameEl.innerText : a ? a.innerText : "") || "").trim().slice(0, 80) || "Product";
-      const priceEl = b.querySelector(".price");
-      const price = priceEl ? priceEl.innerText.replace(/\s+/g, " ").trim() : "";
-      const amt = amountOf(name, price);
-      if (WANT.includes(amt)) found.set(link, { amt, name, link });
-    });
-    // Backup signal: a buy-type button exists even if the product boxes were not recognised.
-    if (found.size === 0 && boxes.length === 0) {
-      const btn = Array.from(document.querySelectorAll("a, button")).find((el) =>
-        /^(add to cart|buy now|select options)/i.test((el.innerText || el.value || "").trim())
-      );
-      if (btn) found.set(location.href, { amt: 0, name: "A buy button appeared on the page", link: location.href });
-    }
-    return found;
-  }
-
-  function main() {
-    const { token, chat } = getCreds();
-    if (!token || !chat) return; // no details yet: do nothing, do not keep reloading
-
-    const now = Date.now();
-    setTimeout(() => location.reload(), CHECK_EVERY_MS + Math.random() * JITTER_MS);
-
-    // Cloudflare "Just a moment" screen
-    if (/just a moment/i.test(document.title)) {
-      const n = (GM_getValue("blocked", 0) || 0) + 1;
-      GM_setValue("blocked", n);
-      if (n === 5) send("⚠️ " + PLATFORM + ": stuck on the 'Just a moment' check 5 times in a row. Open Firefox and look at the screen.");
-      return;
-    }
-    GM_setValue("blocked", 0);
-
-    setTimeout(() => {
-      const items = scan();
-      const avail = Array.from(new Set(Array.from(items.values()).map((i) => i.amt))).sort((x, y) => x - y);
-      let st = {};
-      try { st = JSON.parse(GM_getValue("win_state", "{}")); } catch (e) { st = {}; }
-      if (decide(st, avail, false, now, RESET_AFTER)) {
-        const lines = Array.from(items.values()).sort((x, y) => x.amt - y.amt).map((i) => (i.amt ? "₹" + i.amt : i.name) + " " + i.link);
-        send("🟢 " + PLATFORM + ": in stock now\n" + availLine(avail) + "\n" + lines.join("\n"));
-      }
-      GM_setValue("win_state", JSON.stringify(st));
-
-      if (now - GM_getValue("last_beat", 0) > HEARTBEAT_MS) {
-        send("✅ E2Z watcher is running. " + (avail.length ? availLine(avail) : "Nothing in stock right now."));
-        GM_setValue("last_beat", now);
-      }
-    }, SETTLE_MS);
-  }
-
-  main();
-})();
