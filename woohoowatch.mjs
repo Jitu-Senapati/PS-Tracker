@@ -1,5 +1,5 @@
-// woohoowatch.mjs (v2) - READ-ONLY. Watches Woohoo PlayStation E-Gift Card stock through the same
-// "inventories" list the Woohoo page itself asks for. Never logs in, never buys.
+// woohoowatch.mjs (v3) - READ-ONLY. Watches Woohoo PlayStation E-Gift Card stock through the same
+// "inventories" list (the SOLD OUT amounts) the Woohoo page itself asks for. Never logs in, never buys.
 // Run:  node --env-file=.env woohoowatch.mjs
 import fs from "node:fs";
 
@@ -38,25 +38,34 @@ const amtText = (a) => (a === 0 ? "check the page" : "₹" + a);
 const availLine = (avail) => "Available: " + [...avail].sort((x, y) => x - y).map(amtText).join(" ");
 // ---- end of notification rules ----
 
-// The inventories list holds one entry per amount that is available. Returns the amounts, or null if unreadable.
-export function readInventory(text) {
+// The "inventories" list holds the amounts that are NOT available (sold out). Returns those amounts, or null if unreadable.
+// The check on code/total stops a blocked or odd answer from looking like "nothing sold out".
+export function readSoldOut(text) {
   let j; try { j = JSON.parse(text); } catch { return null; }
-  if (!j || !Array.isArray(j.inventories)) return null;
+  if (!j || String(j.code) !== "0" || !Array.isArray(j.inventories)) return null;
+  if (j.total !== undefined && Number(j.total) !== j.inventories.length) return null;
   return [...new Set(j.inventories.map((x) => Number(x && x.denomination)).filter((n) => n > 0))].sort((a, b) => a - b);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { BOT_TOKEN, CHAT_ID } = process.env;
-  if (!BOT_TOKEN || !CHAT_ID) { console.log("BOT_TOKEN / CHAT_ID not found. Run with: node --env-file=.env woohoowatch.mjs"); process.exit(1); }
+  const CHATS = (process.env.CHAT_IDS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const OWNER = CHAT_ID || CHATS[0];                    // you: gets everything (alerts, started, running, warnings)
+  const ALERT_CHATS = [...new Set([OWNER, ...CHATS])];  // you + friends: get only the "in stock" alerts
+  if (!BOT_TOKEN || !OWNER) { console.log("BOT_TOKEN / CHAT_ID not found. Run with: node --env-file=.env woohoowatch.mjs"); process.exit(1); }
   const log = (...a) => console.log(new Date().toLocaleTimeString("en-IN"), ...a);
+  // Stock alerts (they start with the green circle) go to you and everyone in CHAT_IDS; status messages go to you only.
   const send = async (text) => {
-    try {
-      const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chat_id: CHAT_ID, text: text.slice(0, 4000) }),
-      });
-      if (!r.ok) log("telegram error", r.status);
-    } catch (e) { log("telegram failed", e.message); }
+    const targets = text.startsWith("🟢") ? ALERT_CHATS : [OWNER];
+    for (const chat of targets) {
+      try {
+        const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chat_id: chat, text: text.slice(0, 4000) }),
+        });
+        if (!r.ok) log("telegram error", chat, r.status);
+      } catch (e) { log("telegram failed", chat, e.message); }
+    }
   };
   const get = async () => {
     try {
@@ -73,9 +82,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const round = async (first) => {
     const now = Date.now();
     const g = await get();
-    const inv = g.status === 200 ? readInventory(g.text) : null;
+    const soldOut = g.status === 200 ? readSoldOut(g.text) : null;
     let summary; let avail = null;
-    if (inv) { avail = inv.filter((a) => WANT.includes(a)); summary = "available: " + (inv.join(" ") || "none"); }
+    if (soldOut) { avail = WANT.filter((a) => !soldOut.includes(a)); summary = "sold out: " + (soldOut.join(" ") || "none") + " | available: " + (avail.join(" ") || "none"); }
     else summary = `unreadable (http ${g.status}) ${g.text.slice(0, 60).replace(/\s+/g, " ")}`;
 
     if (avail === null) {

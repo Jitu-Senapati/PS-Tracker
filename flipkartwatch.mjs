@@ -112,17 +112,24 @@ export function hasBuyButton(html) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { BOT_TOKEN, CHAT_ID } = process.env;
-  if (!BOT_TOKEN || !CHAT_ID) { console.log("BOT_TOKEN / CHAT_ID not found. Run with: node --env-file=.env flipkartwatch.mjs"); process.exit(1); }
+  const CHATS = (process.env.CHAT_IDS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const OWNER = CHAT_ID || CHATS[0];                    // you: gets everything (alerts, started, running, warnings)
+  const ALERT_CHATS = [...new Set([OWNER, ...CHATS])];  // you + friends: get only the "in stock" alerts
+  if (!BOT_TOKEN || !OWNER) { console.log("BOT_TOKEN / CHAT_ID not found. Run with: node --env-file=.env flipkartwatch.mjs"); process.exit(1); }
   const log = (...a) => console.log(new Date().toLocaleTimeString("en-IN"), ...a);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Stock alerts (they start with the green circle) go to you and everyone in CHAT_IDS; status messages go to you only.
   const send = async (text) => {
-    try {
-      const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chat_id: CHAT_ID, text: text.slice(0, 4000) }),
-      });
-      if (!r.ok) log("telegram error", r.status);
-    } catch (e) { log("telegram failed", e.message); }
+    const targets = text.startsWith("🟢") ? ALERT_CHATS : [OWNER];
+    for (const chat of targets) {
+      try {
+        const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chat_id: chat, text: text.slice(0, 4000) }),
+        });
+        if (!r.ok) log("telegram error", chat, r.status);
+      } catch (e) { log("telegram failed", chat, e.message); }
+    }
   };
   const get = async (url, ua = UA) => {
     try {

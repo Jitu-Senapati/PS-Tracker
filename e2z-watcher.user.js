@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E2Z PSN India watcher
 // @namespace    ps-tracker
-// @version      1.1
+// @version      1.3
 // @description  Reloads the E2Z PSN India page and sends a Telegram message when products appear. Read-only: never logs in, never buys.
 // @match        https://e2zstore.com/category/psn-india/*
 // @match        https://www.e2zstore.com/category/psn-india/*
@@ -58,17 +58,29 @@
       chat = (prompt("Paste your Telegram CHAT_ID, then press OK") || "").trim();
       if (chat) GM_setValue("chat_id", chat);
     }
+    // Optional extra chats (friends) that should also get the stock alerts. Asked once.
+    if (token && chat && GM_getValue("extra_set_v1", "") !== "1") {
+      const x = prompt("Optional: extra Telegram chat ids that should also get STOCK ALERTS, separated by commas (for example 8954749392,6316533826). Leave empty for none.");
+      GM_setValue("extra_chats", (x || "").trim());
+      GM_setValue("extra_set_v1", "1");
+    }
     return { token, chat };
   }
 
+  // Stock alerts (they start with the green circle) go to you and the extra chats; status messages go to you only.
   function send(text) {
     const { token, chat } = getCreds();
     if (!token || !chat) return;
-    GM_xmlhttpRequest({
-      method: "POST",
-      url: "https://api.telegram.org/bot" + token + "/sendMessage",
-      headers: { "Content-Type": "application/json" },
-      data: JSON.stringify({ chat_id: chat, text: text.slice(0, 4000) }),
+    const owner = chat.split(",")[0].trim();
+    const extra = (GM_getValue("extra_chats", "") || "").split(",").map((c) => c.trim()).filter(Boolean);
+    const targets = text.startsWith("🟢") ? Array.from(new Set([owner, ...extra])) : [owner];
+    targets.forEach((c) => {
+      GM_xmlhttpRequest({
+        method: "POST",
+        url: "https://api.telegram.org/bot" + token + "/sendMessage",
+        headers: { "Content-Type": "application/json" },
+        data: JSON.stringify({ chat_id: c, text: text.slice(0, 4000) }),
+      });
     });
   }
 
