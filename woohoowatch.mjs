@@ -1,10 +1,11 @@
-// woohoowatch.mjs - READ-ONLY. Watches the Woohoo PlayStation E-Gift Card page (one page, amount buttons).
-// The amount buttons on the page are the amounts in stock. If no amount is offered the page says "product not found".
-// Never logs in, never buys. Run:  node --env-file=.env woohoowatch.mjs
+// woohoowatch.mjs (v2) - READ-ONLY. Watches Woohoo PlayStation E-Gift Card stock through the same
+// "inventories" list the Woohoo page itself asks for. Never logs in, never buys.
+// Run:  node --env-file=.env woohoowatch.mjs
 import fs from "node:fs";
 
 const PLATFORM = "Woohoo";
 const PAGE = "https://www.woohoo.in/playstation-e-gift-instant-voucher";
+const API = "https://www.woohoo.in/proxy/locale/en-in/product/inventories?searchCriteria[filter_groups][0][filters][0][field]=universalProductCodes.entityId&searchCriteria[filter_groups][0][filters][0][condition_type]=eq&searchCriteria[filter_groups][0][filters][0][value]=7864&searchCriteria[limit]=2000&searchCriteria[offset]=0";
 const WANT = [1000, 2000, 3000, 4000, 5000];
 const UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
 const EVERY_MS = 5 * 60 * 1000;           // one check every 5 minutes
@@ -37,17 +38,11 @@ const amtText = (a) => (a === 0 ? "check the page" : "₹" + a);
 const availLine = (avail) => "Available: " + [...avail].sort((x, y) => x - y).map(amtText).join(" ");
 // ---- end of notification rules ----
 
-// chips = the amounts offered as buttons; notFound = the page says the product does not exist.
-export function readPage(html, status) {
-  const chips = [];
-  for (const m of html.matchAll(/<button[^>]*denomination__slab__item[^>]*>/g)) {
-    const a = m[0].match(/aria-label="Select\s*(\d+)"/);
-    if (a) chips.push(Number(a[1]));
-  }
-  const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
-  const notFound = status === 404 || /product not found|page not found|page you are looking for/i.test(text);
-  const recognized = /PlayStation E.?Gift Card/i.test(html) || chips.length > 0;
-  return { chips: [...new Set(chips)], notFound, recognized };
+// The inventories list holds one entry per amount that is available. Returns the amounts, or null if unreadable.
+export function readInventory(text) {
+  let j; try { j = JSON.parse(text); } catch { return null; }
+  if (!j || !Array.isArray(j.inventories)) return null;
+  return [...new Set(j.inventories.map((x) => Number(x && x.denomination)).filter((n) => n > 0))].sort((a, b) => a - b);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -65,9 +60,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   };
   const get = async () => {
     try {
-      const res = await fetch(PAGE, { headers: { "User-Agent": UA, "Accept-Language": "en-IN,en;q=0.9", Accept: "text/html" }, redirect: "follow", signal: AbortSignal.timeout(40000) });
-      return { status: res.status, html: await res.text() };
-    } catch { return { status: 0, html: "" }; }
+      const res = await fetch(API, { headers: { "User-Agent": UA, "Accept-Language": "en-IN,en;q=0.9", Accept: "application/json, text/plain, */*", Referer: PAGE, Origin: "https://www.woohoo.in" }, redirect: "follow", signal: AbortSignal.timeout(40000) });
+      return { status: res.status, text: await res.text() };
+    } catch { return { status: 0, text: "" }; }
   };
 
   let state = {};
@@ -78,15 +73,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const round = async (first) => {
     const now = Date.now();
     const g = await get();
-    const r = g.status ? readPage(g.html, g.status) : null;
+    const inv = g.status === 200 ? readInventory(g.text) : null;
     let summary; let avail = null;
-    if (r && r.chips.length) { avail = r.chips.filter((a) => WANT.includes(a)).sort((x, y) => x - y); summary = "chips: " + r.chips.join(" "); }
-    else if (r && r.notFound) { avail = []; summary = "no stock (product not found)"; }
-    else { summary = `unreadable (http ${g.status})`; }
+    if (inv) { avail = inv.filter((a) => WANT.includes(a)); summary = "available: " + (inv.join(" ") || "none"); }
+    else summary = `unreadable (http ${g.status}) ${g.text.slice(0, 60).replace(/\s+/g, " ")}`;
 
     if (avail === null) {
       state.bad++;
-      if (state.bad >= WARN_AFTER && !state.warned) { state.warned = true; await send(`⚠️ ${PLATFORM}: could not read the page ${state.bad} times in a row (http ${g.status}).`); }
+      if (state.bad >= WARN_AFTER && !state.warned) { state.warned = true; await send(`⚠️ ${PLATFORM}: could not read the stock list ${state.bad} times in a row (http ${g.status}).`); }
     } else {
       state.bad = 0; state.warned = false;
       if (decide(state, avail, false, now, RESET_AFTER)) await send(`🟢 ${PLATFORM}: in stock now\n${availLine(avail)}\n${PAGE}`);
