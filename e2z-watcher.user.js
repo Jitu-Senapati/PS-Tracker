@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E2Z PSN India watcher
 // @namespace    ps-tracker
-// @version      1.4
+// @version      1.5
 // @description  Reloads the E2Z PSN India page and sends a Telegram message when products appear. Read-only: never logs in, never buys.
 // @match        https://e2zstore.com/category/psn-india/*
 // @match        https://www.e2zstore.com/category/psn-india/*
@@ -58,12 +58,15 @@
       chat = (prompt("Paste your Telegram CHAT_ID, then press OK") || "").trim();
       if (chat) GM_setValue("chat_id", chat);
     }
-    // Optional extra chats (friends) that should also get the stock alerts. Asked once.
-    if (token && chat && GM_getValue("extra_set_v2", "") !== "1") {
-      const x = prompt("Extra Telegram chat ids that should also get STOCK ALERTS (friends), separated by commas, no spaces. Leave empty for none.", GM_getValue("extra_chats", "") || "");
-      if (x !== null) { // pressing Cancel keeps what was saved and asks again on the next page load
-        GM_setValue("extra_chats", (x || "").trim());
-        GM_setValue("extra_set_v2", "1");
+    // Friends' chat ids: they get the stock alerts too. Asked once (the question comes back on the next page load if you press Cancel).
+    if (token && chat && GM_getValue("extra_set_v3", "") !== "1") {
+      const x = prompt("Type your FRIENDS' Telegram chat ids here (not your own), separated by commas, no spaces. They will get the stock alerts. Do not leave this empty if you want them to get E2Z alerts.", GM_getValue("extra_chats", "") || "");
+      if (x !== null) {
+        const v = (x || "").trim();
+        if (v || confirm("Nothing typed: your friends will NOT get E2Z alerts. Press OK to keep it that way, or Cancel to be asked again.")) {
+          GM_setValue("extra_chats", v);
+          GM_setValue("extra_set_v3", "1");
+        }
       }
     }
     return { token, chat };
@@ -120,6 +123,11 @@
   function main() {
     const { token, chat } = getCreds();
     if (!token || !chat) return; // no details yet: do nothing, do not keep reloading
+    const extraNow = (GM_getValue("extra_chats", "") || "").split(",").map((c) => c.trim()).filter(Boolean);
+    if (GM_getValue("extra_notified", "") !== "n:" + extraNow.join(",")) { // tells you (only you) how many friends are saved
+      send("✅ E2Z watcher updated (v1.5). Friends who will get the stock alerts: " + extraNow.length);
+      GM_setValue("extra_notified", "n:" + extraNow.join(","));
+    }
 
     const now = Date.now();
     setTimeout(() => location.reload(), CHECK_EVERY_MS + Math.random() * JITTER_MS);
